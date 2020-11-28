@@ -15,17 +15,10 @@ if __name__ == "__main__":
     img_left = cv2.imread("./pic_right/" + str(number) + ".jpg")
 
     print("----start the image processing----\n")
-    # 调整图像大小，使得两张图像大小相同
-    x, y = img_right.shape[0:2]
-    img_left = cv2.resize(img_left, (y, x), interpolation=cv2.INTER_AREA)
-
-    # 对图像进行灰度处理，并取出底色，避免干扰
-    img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
-    img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
 
     # 将两个图片拼接在一起
     print("----matching----")
-    matching, result = SIFT(img_left, img_right, img_left_g, img_right_g, norm=0.75)
+    matching, result = SIFT(img_left, img_right, norm=0.75)
 
     # 利用FFT进行文字方向矫正，使得文字正向
     print("----rotating----\n")

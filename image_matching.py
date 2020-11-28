@@ -2,12 +2,18 @@
 # author: hhhfccz(胡珈魁) time:2020/8/25
 import numpy as np
 import cv2
+from remove_the_background import remove_the_bg
 
 
-def SIFT(img_left, img_right, img_left_g, img_right_g, MIN_MATCH_COUNT=10, norm=0.75):
-    # 获取图片大小
+def SIFT(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
+    # 获取图片大小，调整图像大小，使得两张图像大小相同
     global result
     h, w = img_left.shape[:2]
+    img_left = cv2.resize(img_left, (w, h), interpolation=cv2.INTER_AREA)
+
+    # 对图像进行灰度处理，并取出底色，避免干扰
+    img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
+    img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
 
     # 创建sift对象
     sift = cv2.xfeatures2d.SIFT_create()
