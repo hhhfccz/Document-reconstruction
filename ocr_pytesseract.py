@@ -14,5 +14,5 @@ def ocr(img_number):
     # 其中img_number为第几组图像
     for img_file in img_files:
         img = cv2.imread(img_path + "/" + img_file)
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        print(pytesseract.image_to_string(img_rgb))
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        print(pytesseract.image_to_string(img_gray, lang='chi_sim'))

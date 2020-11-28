@@ -27,7 +27,7 @@ def find_text_region(img):
         box = np.int0(cv2.boxPoints(rect))
         # 筛选
         width, height = abs(box[0] - box[2])
-        if height > 1.2 * width or width * height < 50:
+        if height > 1.2 * width or width * height < 50 or width * height > 100000:
             continue
         region.append(box)
     return region
