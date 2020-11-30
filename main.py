@@ -1,13 +1,16 @@
 # ——*——coding:utf-8——*——
 # author: hhhfccz(胡珈魁) time:2020/8/29
 import cv2
+import time
+from functools import wraps
 from rotation_according_to_word_direction import rotated_img_with_fft
-from image_matching import SIFT
+from image_matching import get_match_img
 from find_the_text import detect
 from remove_the_background import remove_the_bg
 from ocr_pytesseract import ocr
 
-if __name__ == "__main__":
+
+def main():
     print("please make sure there is a repeat between the two images.")
     # 输入接口（有点小问题，有空再改吧）
     number = input("choose your test number: ")
@@ -18,7 +21,7 @@ if __name__ == "__main__":
 
     # 将两个图片拼接在一起
     print("----matching----")
-    matching, result = SIFT(img_left, img_right, norm=0.75)
+    _, result = get_match_img(img_left, img_right, norm=0.75)
 
     # 利用FFT进行文字方向矫正，使得文字正向
     print("----rotating----\n")
@@ -39,3 +42,7 @@ if __name__ == "__main__":
     print("----ocr---")
     ocr(number)
     print("----Done----")
+
+
+if __name__ == "__main__":
+    main()
