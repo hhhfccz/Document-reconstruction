@@ -13,4 +13,4 @@ def get_roi(img_number, img, region):
             cv2.imwrite("./get_text_roi/img" + str(img_number) + "/" + str(i) + ".jpg",
                         img[width[1]:height[1], width[0]:height[0]])
         except cv2.error:
-            print(i)
+            print("something wrong: "+str(i))

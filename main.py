@@ -36,13 +36,13 @@ def main():
     cv2.imwrite("./find_text_result/result" + str(number) + ".jpg", text_area)
     cv2.imshow("find text result", remove_the_bg(text_area))
     cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
-    # 开始进行OCR
-    print("----ocr---")
-    ocr(number)
+    # # 开始进行OCR
+    # print("----ocr---")
+    # ocr(number)
     print("----Done----")
 
 
 if __name__ == "__main__":
     main()
+    cv2.destroyAllWindows()
