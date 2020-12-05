@@ -1,8 +1,6 @@
 # ——*——coding:utf-8——*——
 # author: hhhfccz(胡珈魁) time:2020/8/29
 import cv2
-import time
-from functools import wraps
 from rotation_according_to_word_direction import rotated_img_with_fft
 from image_matching import get_match_img
 from find_the_text import detect

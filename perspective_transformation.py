@@ -4,42 +4,6 @@ import numpy as np
 import cv2
 
 
-def getkpoint(imag, input1):
-    mask1 = np.zeros_like(input1)
-    x = 0
-    y = 0
-    w1, h1 = input1.shape
-    input1 = input1[0:w1, 200:h1]
-
-    try:
-        w, h = imag.shape
-    except:
-        return None
-
-    mask1[y:y + h, x:x + w] = 255  # 整张图片像素
-    keypoint = []
-    kp = cv2.goodFeaturesToTrack(input1, 200, 0.04, 7)
-    if kp is not None and len(kp) > 0:
-        for x, y in np.float32(kp).reshape(-1, 2):
-            keypoint.append((x, y))
-    return keypoint
-
-
-def process(image):
-    grey1 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    grey = cv2.equalizeHist(grey1)
-    keypoint = getkpoint(grey, grey1)
-
-    if keypoint is not None and len(keypoint) > 0:
-        for x, y in keypoint:
-            cv2.circle(image, (int(x + 200), y), 3, (255, 255, 0))
-    return image
-
-
-import cv2
-import numpy as np
-
-
 def get_contour(img):
     """获取连通域
     :param img: 输入图片
@@ -53,7 +17,6 @@ def get_contour(img):
     for i in range(len(contours)):
         area = cv2.contourArea(contours[i])
         print("轮廓 %d 的面积是:%d" % (i, area))
-
         areas.append(area)
     index = np.argmax(areas)
 
@@ -62,7 +25,7 @@ def get_contour(img):
 
 def get_cornerHarris(img_src):
     """
-        获取图像角点
+    获取图像角点
     :param img_src: 处理图像
     :return: 角点图像
     """
@@ -146,9 +109,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # img = cv2.imread("E:\\cv\\Document-reconstruction\\rotated_result\\result2.jpg")
-    # img = process(img)
-    # cv2.imshow("img", img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
     main()

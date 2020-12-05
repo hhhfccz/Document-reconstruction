@@ -61,7 +61,7 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
         # 返回值：H为变换矩阵,mask为掩膜
         H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 
-        # cv2.warpPerspective：利用M矩阵对原图进行简单的透视变换
+        # cv2.warpPerspective：利用H矩阵对原图进行简单的透视变换
         wrap = cv2.warpPerspective(img_left, H,
                                    (2 * w, 2 * h))
         wrap[0:h, 0:w] = img_right
