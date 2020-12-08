@@ -5,11 +5,12 @@ import cv2
 import math
 
 
-def rotated_img_with_fft(img, img_gray):
+def rotated_img_with_fft(img):
+    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     # 对图像进行边界扩充
     top_size, bottom_size, left_size, right_size = 50, 50, 50, 50
     constant = cv2.copyMakeBorder(img_gray, top_size, bottom_size, left_size, right_size,
-                                  borderType=cv2.BORDER_CONSTANT, value=0)
+                                  borderType=cv2.BORDER_REPLICATE)
 
     # 获取图片大小
     h, w = img_gray.shape[:2]
@@ -65,4 +66,8 @@ def rotated_img_with_fft(img, img_gray):
 
 
 if __name__ == "__main__":
-    pass
+    img = cv2.imread("E:\\cv\\Document-reconstruction\\rotated_result\\result5.jpg")
+    ans = rotated_img_with_fft(img)
+    cv2.imshow("img", ans)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()

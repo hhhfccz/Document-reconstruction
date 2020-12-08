@@ -9,6 +9,7 @@ from used_time import decorator_used_time
 @decorator_used_time
 def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
     # 获取图片大小，调整图像大小，使得两张图像大小相同
+    global match_result
     h, w = img_left.shape[:2]
     img_left = cv2.resize(img_left, (w, h), interpolation=cv2.INTER_AREA)
 
@@ -72,10 +73,10 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
         min_col, max_col = min(cols), max(cols) + 1
 
         result = wrap[min_row:max_row, min_col:max_col, :]
-        result = cv2.resize(result, (int(w / 2), int(h / 2)),
-                            interpolation=cv2.INTER_CUBIC)
+        match_result = cv2.resize(result, (int(w / 2), int(h / 2)),
+                                  interpolation=cv2.INTER_CUBIC)
 
-    return matching, result
+    return matching, match_result
 
 
 if __name__ == '__main__':

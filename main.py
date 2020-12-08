@@ -23,8 +23,7 @@ def main():
 
     # 利用FFT进行文字方向矫正，使得文字正向
     print("----rotating----\n")
-    img_gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-    rotated = rotated_img_with_fft(result, img_gray)
+    rotated = rotated_img_with_fft(result)
     cv2.imwrite("./rotated_result/result" + str(number) + ".jpg", rotated)
 
     # 利用形态学找到文字大致范围并框选出来
