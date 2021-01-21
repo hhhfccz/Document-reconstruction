@@ -28,8 +28,7 @@ def main():
 
     # 利用形态学找到文字大致范围并框选出来
     print("----finding the text----\n")
-    text_area = detect(img_rotated, number)
-    print("----picture processing, finished----\n")
+    text_area = detect(remove_the_bg(img_rotated))
     cv2.imwrite("./find_text_result/result" + str(number) + ".jpg", text_area)
     cv2.waitKey(0)
 
