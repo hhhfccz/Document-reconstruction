@@ -7,11 +7,10 @@ from used_time import decorator_used_time
 
 
 @decorator_used_time
-def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
+def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     # 获取图片大小，调整图像大小，使得两张图像大小相同
     global match_result
     h, w = img_left.shape[:2]
-    img_left = cv2.resize(img_left, (w, h), interpolation=cv2.INTER_AREA)
 
     # 对图像进行灰度处理，并取出底色，避免干扰
     img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
@@ -25,9 +24,9 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
     keypoint2, features2 = sift.detectAndCompute(img_right_g, None)
 
     # 设置FLANN参数
-    FLANN_INDEX_KDTREE = 0
+    FLANN_INDEX_KDTREE = 1
     index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-    search_params = dict(checks=50)
+    search_params = dict(checks=100)
 
     # 将FlannBasedMatcher方法实例化
     flann = cv2.FlannBasedMatcher(index_params, search_params)
@@ -41,14 +40,11 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
         if m.distance < norm * n.distance:
             good.append([m])
 
-    matching = cv2.drawMatchesKnn(img_left, keypoint1, img_right, keypoint2, good, None, flags=2)
-    matching = cv2.resize(matching, (int(w / 2), int(h / 2)),
-                          interpolation=cv2.INTER_CUBIC)
+    matching = cv2.drawMatchesKnn(img_left, keypoint1, img_right, keypoint2,
+                                  good, None, flags=2)
 
     if len(good) > MIN_MATCH_COUNT:
         # 得到两幅待拼接图的匹配点集
-        # src = source;dst = destination;pts = points
-        # must rerun this code, so strange
         good = []
         for m, n in matches:
             if m.distance < norm * n.distance:
@@ -72,10 +68,8 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.75):
         min_row, max_row = min(rows), max(rows) + 1
         min_col, max_col = min(cols), max(cols) + 1
 
-        result = wrap[min_row:max_row, min_col:max_col, :]
-        match_result = cv2.resize(result, (int(w / 2), int(h / 2)),
-                                  interpolation=cv2.INTER_CUBIC)
-
+        match_result = wrap[min_row:max_row, min_col:max_col, :]
+        cv2.imwrite("./match_result/" + str(number) + ".jpg", match_result)
     return matching, match_result
 
 
