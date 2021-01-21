@@ -12,7 +12,7 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     global match_result
     h, w = img_left.shape[:2]
 
-    # 对图像进行灰度处理，并取出底色，避免干扰
+    # 取出底色，避免干扰（可选）
     img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
     img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
 
@@ -23,7 +23,7 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     keypoint1, features1 = sift.detectAndCompute(img_left_g, None)
     keypoint2, features2 = sift.detectAndCompute(img_right_g, None)
 
-    # 设置FLANN参数
+    # 设置FLANN参数，如果取0极为耗费时间
     FLANN_INDEX_KDTREE = 1
     index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
     search_params = dict(checks=100)
@@ -34,16 +34,7 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     # 利用knnMatch匹配处理，并将结果返回给matches，请确保k=2
     matches = flann.knnMatch(features1, features2, k=2)
 
-    # 比值判别法删除离群点，将符合要求的匹配结果进行输出
-    good = []
-    for m, n in matches:
-        if m.distance < norm * n.distance:
-            good.append([m])
-
-    matching = cv2.drawMatchesKnn(img_left, keypoint1, img_right, keypoint2,
-                                  good, None, flags=2)
-
-    if len(good) > MIN_MATCH_COUNT:
+    if len(matches) > MIN_MATCH_COUNT:
         # 得到两幅待拼接图的匹配点集
         good = []
         for m, n in matches:
@@ -70,7 +61,7 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
 
         match_result = wrap[min_row:max_row, min_col:max_col, :]
         cv2.imwrite("./match_result/" + str(number) + ".jpg", match_result)
-    return matching, match_result
+        return match_result
 
 
 if __name__ == '__main__':

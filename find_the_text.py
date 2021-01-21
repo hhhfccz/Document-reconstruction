@@ -7,10 +7,9 @@ from get_roi import get_roi
 
 def preprocess(img_gray):
     # 二值化
-    canny = cv2.Canny(img_gray, 75, 120)
-    _, binary = cv2.threshold(canny, 0, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(img_gray, 127, 255, cv2.THRESH_OTSU)
     # 开运算
-    return cv2.dilate(binary, np.ones((3, 3), np.uint8), iterations=1)
+    return cv2.dilate(binary, np.ones((3, 3), np.uint8), iterations=2)
 
 
 def find_text_region(img):
@@ -27,7 +26,7 @@ def find_text_region(img):
         box = np.int0(cv2.boxPoints(rect))
         # 筛选
         width, height = abs(box[0] - box[2])
-        if height > 1.2 * width or width * height < 50 or width * height > 100000:
+        if height > 1.2 * width:
             continue
         region.append(box)
     return region
@@ -35,7 +34,8 @@ def find_text_region(img):
 
 def detect(img_number, img):
     region = find_text_region(img)
-    get_roi(img_number, img, region)
+    # get_roi(img_number, img, region)
+    print(len(region))
     for box in region:
         cv2.drawContours(img, [box], 0, (0, 255, 0), 2)
     return img
