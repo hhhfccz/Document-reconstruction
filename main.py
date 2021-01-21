@@ -19,16 +19,16 @@ def main():
 
     # 将两个图片拼接在一起
     print("----matching----")
-    result = get_match_img(img_left, img_right, number)
+    img_match = get_match_img(img_left, img_right, number)
 
     # 利用FFT进行文字方向矫正，使得文字正向
     print("----rotating----\n")
-    rotated = rotated_img_with_fft(result)
-    cv2.imwrite("./rotated_result/" + str(number) + ".jpg", rotated)
+    img_rotated = rotated_img_with_fft(img_match)
+    cv2.imwrite("./rotated_result/" + str(number) + ".jpg", img_rotated)
 
     # 利用形态学找到文字大致范围并框选出来
     print("----finding the text----\n")
-    text_area = detect(number, rotated)
+    text_area = detect(img_rotated, number)
     print("----picture processing, finished----\n")
     cv2.imwrite("./find_text_result/result" + str(number) + ".jpg", text_area)
     cv2.waitKey(0)

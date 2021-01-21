@@ -1,4 +1,3 @@
 *.zip
 /.idea/
 /__pycache__/
-.gitattributes
