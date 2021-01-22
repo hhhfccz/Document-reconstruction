@@ -5,7 +5,7 @@ import numpy as np
 from get_roi import get_roi
 
 
-def non_max_suppress(boxes, threshold=0.8):
+def non_max_suppress(boxes, threshold=0.2):
     if len(boxes) == 0:
         return boxes
     else:
@@ -16,7 +16,7 @@ def non_max_suppress(boxes, threshold=0.8):
         idxs = np.argsort(y2)
         pick = []
         # 遍历重复框
-        while len(idxs) > 0:
+        while len(idxs):
             last = len(idxs) - 1
             i = idxs[last]
             pick.append(i)
@@ -51,14 +51,13 @@ def detect(img_gray, norm=1.2):
     boxes = []
     for c in hulls:
         x, y, w, h = cv2.boundingRect(c)
-        boxes.append([x, y, x + w, y + h])
         if w < norm * h and h < norm * w:
-            cv2.rectangle(img_gray, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    # boxes = non_max_suppress(np.array(boxes), threshold=0.5)
-
-    # for (x, y, w, h) in boxes:
-    #     if w < norm * h and h < norm * w:
-    #         cv2.rectangle(img_gray, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            boxes.append([x, y, x + w, y + h])
+    # print(len(boxes))
+    boxes = non_max_suppress(np.array(boxes))
+    # print(len(boxes))
+    for (x1, y1, x2, y2) in boxes:
+        cv2.rectangle(img_gray, (x1, y1), (x2, y2), (0, 255, 0), 3)
     return img_gray
 
 
