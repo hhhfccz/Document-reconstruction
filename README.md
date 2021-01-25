@@ -1,32 +1,71 @@
-## Document-reconstruction
-`文档重建`的主要功能为将图片转换为tex源码，不仅仅局限于印刷体数学公式图片
-该项目包括以下功能：
-- 图像预处理
-    - 图像拼接
-    - 页面扭曲纠正
-    - 文本定位
-    - 角点检测、透视变换
-    
-- OCR
-    - 识别
-    - 文本纠错
-    
-- 转tex
-    - 根据OCR结果，将排版信息依托于tex代码信息做保存
-    
-## 代码大体思路
-### 图像预处理
-#### 图像拼接
-使用SIFT特征提取方法，采用knnMatch做匹配
-#### 页面扭曲纠正
-TODO
-#### 文本定位
-利用形态学方法大致框选出文本位置
-## 使用方法及建议
+# Document-reconstruction
 
-## 测试样例
+This project will consist of two parts: software and hardware.
 
-## FAQ
+## Software part
 
-## TODO
+The purpose of the software part of this project:
 
+1. **Image stitching**
+2. **Text orientation correction in images**
+3. *Framing text areas in images*
+4. OCR (We will focus on OCR for handwritten Chinese)
+5. Text Correction (We will focus on Text Correction for Chinese)
+6. more
+
+## Hardware part
+
+The purpose of the hardware part of this project:
+
+1. Getting the images and remove them to the 
+2. Transferring them to the device that performs the image processing
+3. *Turning the pages of the book automatically*
+4. more
+
+> Completed functions are marked in bold
+>
+> Features that are already available but need refinement are marked in italics
+>
+> Others need to be pushed around by DDL / hhhfccz
+
+# How to do
+
+I will introduce the overall project implementation idea according to two directions: software part and hardware part
+
+## Software part
+
+### Image stitching
+
+**SIFT & knnMatch**, so easy, pass
+
+you can see the test samples in ['match_result'](https://github.com/hhhfccz/Document-reconstruction/tree/main/match_result)
+
+### Text orientation correction in images
+
+**Hough Linear Inspection & math**, so easy, pass
+
+you can see the test samples in ['rotated_result'](https://github.com/hhhfccz/Document-reconstruction/tree/main/rotated_result)
+
+### Framing text areas in images
+
+Now, my idea is to use **MSER and NMS**, but you can see the resullt like:
+
+![find_text_result2.jpg](https://raw.githubusercontent.com/hhhfccz/Document-reconstruction/main/find_text_result/2.jpg)
+
+It does not perform as well as expected.
+
+So, i think Deep learning methods are the only ones that are truly appropriate for the task, like [CTPN](https://github.com/tianzhi0549/CTPN)
+
+# How to use
+
+make sure:
+
+> opencv-python >= 4.4.0
+>
+> open-python-contrib >= 4.4.0
+
+OK! just do it!
+
+> python main.py
+
+so easy
