@@ -21,16 +21,15 @@ def main():
     print("----matching----")
     img_match = get_match_img(img_left, img_right, number)
 
-    # 利用FFT进行文字方向矫正，使得文字正向
+    # 利用直线检测进行文字方向矫正，使得文字正向
     print("----rotating----\n")
     img_rotated = rotated_img_with_fft(img_match)
     cv2.imwrite("./rotated_result/" + str(number) + ".jpg", img_rotated)
 
-    # 利用形态学找到文字大致范围并框选出来
+    # 利用MSER检测找到文字大致范围并框选出来
     print("----finding the text----\n")
     text_area = detect(remove_the_bg(img_rotated), norm=2)
     cv2.imwrite("./find_text_result/" + str(number) + ".jpg", text_area)
-    cv2.waitKey(0)
 
     # # 开始进行OCR
     # print("----ocr---")
@@ -40,4 +39,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    cv2.destroyAllWindows()

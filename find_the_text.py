@@ -2,7 +2,6 @@
 # author: hhhfccz(胡珈魁) time:2020/11/14
 import cv2
 import numpy as np
-from get_roi import get_roi
 
 
 def non_max_suppress(boxes, threshold=0.2):
@@ -55,7 +54,8 @@ def detect(img_gray, norm=1.2):
             boxes.append([x, y, x + w, y + h])
     # print(len(boxes))
     boxes = non_max_suppress(np.array(boxes))
-    # print(len(boxes))
+
+    # print(np.max(boxes[:, 2:3]))
     for (x1, y1, x2, y2) in boxes:
         cv2.rectangle(img_gray, (x1, y1), (x2, y2), (0, 255, 0), 3)
     return img_gray
