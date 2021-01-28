@@ -2,6 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/11/14
 import cv2
 import numpy as np
+from remove_the_background import remove_the_bg
 
 
 def non_max_suppress(boxes, threshold=0.2):
@@ -32,11 +33,16 @@ def non_max_suppress(boxes, threshold=0.2):
             overlap = (w * h) / boxes_area[idxs[:last]]
 
             # 剔除
-            idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > threshold)[0])))
+            idxs = np.delete(idxs, np.concatenate(([last], np.where(threshold < overlap)[0])))
         return boxes[pick].astype("int")
 
 
 def detect(img_gray, norm=1.2):
+    # 自适应直方图均衡
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
+    img_gray = clahe.apply(img_gray)
+    img_gray = remove_the_bg(img_gray)
+
     # 创建mser实例
     mser = cv2.MSER_create(_delta=2, _min_area=300, _max_area=800, _max_variation=0.7)
 
@@ -53,11 +59,18 @@ def detect(img_gray, norm=1.2):
         if w < norm * h and h < norm * w:
             boxes.append([x, y, x + w, y + h])
     # print(len(boxes))
+
+    # 使用NMS算法抑制MSER检测效果
     boxes = non_max_suppress(np.array(boxes))
 
-    # print(np.max(boxes[:, 2:3]))
-    for (x1, y1, x2, y2) in boxes:
-        cv2.rectangle(img_gray, (x1, y1), (x2, y2), (0, 255, 0), 3)
+    # 找到boxes的中心点并连线
+    pts = np.zeros((len(boxes), 2))
+    pts[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2
+    pts[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2
+    pts = pts.astype(np.int)
+    for i in range(len(pts)):
+        cv2.circle(img_gray, (pts[i, 0], pts[i, 1]), 5, (0, 255, 0), 3)
+
     return img_gray
 
 

@@ -24,7 +24,9 @@ The purpose of the hardware part of this project:
 4. more
 
 > Completed functions are marked in bold.
+> 
 > Features that are already available but need refinement are marked in italics.
+> 
 > Others need to be pushed around by DDL / hhhfccz.
 
 # How to do
@@ -49,7 +51,7 @@ you can see test samples in ['rotated_result'](https://github.com/hhhfccz/Docume
 
 my idea is to use **MSER and NMS**, but you can see the result like:
 
-![find_text_result2.jpg](https://raw.githubusercontent.com/hhhfccz/Document-reconstruction/main/find_text_result/2.jpg)
+![find_text_result2.jpg](https://raw.sevencdn.com/hhhfccz/Document-reconstruction/main/find_text_result/2.jpg)
 
 It does not perform as well as expected.
 
@@ -60,6 +62,7 @@ So, i think Deep learning methods are the only ones that are truly appropriate f
 make sure:
 
 > opencv-python >= 4.4.0
+> 
 > opencv-python-contrib >= 4.4.0
 
 OK! just do it!

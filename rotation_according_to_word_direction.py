@@ -50,7 +50,7 @@ def get_angle(lines):
         return 0
 
 
-def rotated_img_with_fft(img):
+def rotate_img(img):
     img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     # 对图像进行边界扩充
     top_size, bottom_size, left_size, right_size = 50, 50, 50, 50

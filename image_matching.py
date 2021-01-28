@@ -3,16 +3,13 @@
 import numpy as np
 import cv2
 from remove_the_background import remove_the_bg
-from used_time import decorator_used_time
 
 
-@decorator_used_time
 def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     # 获取图片大小，调整图像大小，使得两张图像大小相同
-    global match_result
     h, w = img_left.shape[:2]
 
-    # 取出底色，避免干扰（可选）
+    # 取出底色，避免干扰
     img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
     img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
 
@@ -60,7 +57,6 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
         min_col, max_col = min(cols), max(cols) + 1
 
         match_result = wrap[min_row:max_row, min_col:max_col, :]
-        cv2.imwrite("./match_result/" + str(number) + ".jpg", match_result)
         return match_result
 
 

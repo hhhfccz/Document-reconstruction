@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 
-def k_means_of_opencv(X_data, k=3):
+def k_means(X_data, k=3):
     X_data = np.array(X_data)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
     flags = cv2.KMEANS_RANDOM_CENTERS
