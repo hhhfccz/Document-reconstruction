@@ -49,13 +49,8 @@ you can see test samples in ['rotated_result'](https://github.com/hhhfccz/Docume
 
 ### Framing text areas in images
 
-my idea is to use **MSER and NMS**, but you can see the result like:
-
-![find_text_result2.jpg](https://raw.sevencdn.com/hhhfccz/Document-reconstruction/main/find_text_result/2.jpg)
-
-It does not perform as well as expected.
-
-So, i think Deep learning methods are the only ones that are truly appropriate for the task, like [CTPN](https://github.com/tianzhi0549/CTPN)
+my idea is to use **MSER and NMS**
+I made all text detectable by adding CLAHE
 
 # How to use
 
