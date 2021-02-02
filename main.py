@@ -1,10 +1,9 @@
 # ——*——coding:utf-8——*——
 # author: hhhfccz(胡珈魁) time:2020/8/29
 import cv2
-from rotation_according_to_word_direction import rotate_img
-from image_matching import get_match_img
-from find_the_text import detect
-from ocr_pytesseract import ocr
+from image_rotate import rotate_img
+from image_match import get_match_img
+from text_find import detect
 from used_time import decorator_used_time
 
 
@@ -33,9 +32,6 @@ def main():
     text_area = detect(img_rotated, norm=2)
     # cv2.imwrite("./find_text_result/" + str(number) + ".jpg", text_area)
 
-    # 开始进行OCR
-    # print("----ocr---")
-    # ocr(number)
     print("----Done----")
 
 

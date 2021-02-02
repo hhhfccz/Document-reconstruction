@@ -14,3 +14,10 @@ def remove_the_bg(img):
     mask = cv2.dilate(binary, se)
     res = cv2.add(cv2.bitwise_and(img, mask), cv2.bitwise_not(mask))
     return res
+
+
+def k_means(X_data, k=3):
+    X_data = np.array(X_data)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    flags = cv2.KMEANS_RANDOM_CENTERS
+    return cv2.kmeans(X_data.astype(np.float32), k, None, criteria, 10, flags)

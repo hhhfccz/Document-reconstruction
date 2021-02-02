@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/11/14
 import cv2
 import numpy as np
-from remove_the_background import remove_the_bg
+from simple_process import remove_the_bg
 
 
 def find_local_maximums(num_rho, num_angle, threshold, accum):
@@ -30,7 +30,10 @@ def create_trig_table(num_angle, min_theta, theta_step, i_rho):
     return tab_sin, tab_cos
 
 
-def hough_lines_point_set(pts, lines_max, threshold, min_rho, max_rho, rho_step, min_theta, max_theta, theta_step):
+def hough_lines_point_set(pts, lines_max=20, threshold=1,
+                          min_rho=0.0, max_rho=360.0, rho_step=1,
+                          min_theta=0.0, max_theta=np.pi / 2,
+                          theta_step=np.pi / 180):
     # init
     i_rho = float(1 / rho_step)
     i_rho_min = float(min_rho * i_rho)
@@ -55,16 +58,17 @@ def hough_lines_point_set(pts, lines_max, threshold, min_rho, max_rho, rho_step,
     # stage 3, sort the detected lines by accumulator value
     z = zip(accum, sort_buf)
     z = sorted(z, reverse=True)
-    _, sort_buf = zip(*z)
+    accum, sort_buf = zip(*z)
 
     # stage 4, store the lines to the output buffer
     lines_max = np.min([lines_max, len(sort_buf)])
     scale = 1.0 / (num_rho + 2)
-    line = {'length_line': [], 'angle': []}
+    line = {'votes': [], 'length_line': [], 'angle': []}
     for i in range(lines_max):
         idx = sort_buf[i]
         n = np.floor(idx * scale) - 1
         r = idx - (n + 1) * (num_rho + 2) - 1
+        line['votes'].append(accum[i])
         line['length_line'].append(int(min_rho + r * rho_step))
         line['angle'].append(min_theta + n * theta_step)
     return line
@@ -130,15 +134,11 @@ def detect(img_gray, norm=1.2):
     pts = np.zeros((len(boxes), 2))
     pts[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2
     pts[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2
-    # img_new = np.ones_like(img_gray) * 255
     for pt in pts:
         cv2.circle(img_gray, tuple(pt.astype(np.int).tolist()), 5, (0, 255, 0), 3)
 
-    # 利用霍夫变换查找点集中的直线
-    lines = hough_lines_point_set(pts=pts, lines_max=10, threshold=1,
-                                  min_rho=0.0, max_rho=360.0, rho_step=1,
-                                  min_theta=0.0, max_theta=np.pi / 2,
-                                  theta_step=np.pi / 180)
+    # 利用霍夫变换查找点集中的直线，返回角度单位为弧度
+    lines = hough_lines_point_set(pts=pts)
     print(lines)
     return img_gray
 

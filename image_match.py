@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/8/25
 import numpy as np
 import cv2
-from remove_the_background import remove_the_bg
+from simple_process import remove_the_bg
 
 
 def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
