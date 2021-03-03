@@ -106,6 +106,15 @@ def non_max_suppress(boxes, threshold=0.8):
         return boxes[pick].astype("int")
 
 
+def corner_detect(img):
+    img_new = np.zeros_like(img)
+    corners = cv2.goodFeaturesToTrack(img, 10000, 0.01, 10)
+    for corner in corners:
+        x, y = corner.ravel()
+        cv2.circle(img_new, (x, y), 3, 255, -1)
+    return img_new
+
+
 def detect(img_gray, norm=1.2):
     # 自适应直方图均衡
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
@@ -136,14 +145,21 @@ def detect(img_gray, norm=1.2):
     pts[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2
     pts[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2
     pts = pts.astype(np.int)
+
+    # get the text roi
+    img_new_1 = np.ones_like(img_gray) * 255
+    img_new_2 = np.ones_like(img_gray) * 255
     for pt in pts:
-        # cv2.circle(img_gray, tuple(pt.astype(np.int).tolist()), 5, (0, 0, 0), 3)
-        cv2.line(img_gray, (pt[0], 0), (pt[0], img_h), (0, 0, 0), 2)
-        cv2.line(img_gray, (0, pt[1]), (img_w, pt[1]), (0, 0, 0), 2)
+        cv2.line(img_new_1, (0, pt[1]), (img_w, pt[1]), 0, 1)
+        cv2.line(img_new_2, (pt[0], 0), (pt[0], img_h), 0, 1)
+    img_new_1 = cv2.morphologyEx(img_new_1, cv2.MORPH_OPEN, np.ones((5, 5)))
+    img_new_2 = cv2.morphologyEx(img_new_2, cv2.MORPH_OPEN, np.ones((5, 5)))
+    img_new = img_new_1 + img_new_2
+
     # 利用霍夫变换查找点集中的直线，返回角度单位为弧度
     # lines = hough_lines_point_set(pts, min_theta=0., max_theta=np.pi/6)
     # print(lines)
-    return img_gray
+    return img_new
 
 
 if __name__ == '__main__':
