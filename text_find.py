@@ -115,6 +115,31 @@ def corner_detect(img):
     return img_new
 
 
+def level_map(img_gray):
+    """
+    TODO: this function is so ugly, i should update it later
+    """
+    h, w = img_gray.shape
+    map_ans = []
+    for i in range(h):
+        if np.array([img_gray[i, :] == 0]).any():
+            map_ans.append(i)
+    # print(map_ans)
+
+    lists_mapping = []
+    list_mapping = []
+    for i in range(1, len(map_ans)):
+        a = map_ans[i]
+        b = map_ans[i-1] + 1
+        if abs(a - b) <= 10:
+            list_mapping.append(b - 1)
+        else:
+            list_mapping = []
+        if len(lists_mapping) == 0 or (len(lists_mapping) != 0 and list_mapping != lists_mapping[-1]):
+            lists_mapping.append(list_mapping)
+    return lists_mapping
+
+
 def detect(img_gray, norm=1.2):
     # 自适应直方图均衡
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
@@ -155,6 +180,10 @@ def detect(img_gray, norm=1.2):
     img_new_1 = cv2.morphologyEx(img_new_1, cv2.MORPH_OPEN, np.ones((5, 5)))
     img_new_2 = cv2.morphologyEx(img_new_2, cv2.MORPH_OPEN, np.ones((5, 5)))
     img_new = img_new_1 + img_new_2
+
+    lists_mapping = level_map(img_new)
+    [lists_mapping.remove(list_mapping) for list_mapping in lists_mapping if len(list_mapping) <= 5]
+    print(lists_mapping)
 
     # 利用霍夫变换查找点集中的直线，返回角度单位为弧度
     # lines = hough_lines_point_set(pts, min_theta=0., max_theta=np.pi/6)
