@@ -70,7 +70,7 @@ def hough_lines_point_set(pts, lines_max=20, threshold=1,
         r = idx - (n + 1) * (num_rho + 2) - 1
         line['votes'].append(accum[i])
         line['length_line'].append(int(min_rho + r * rho_step))
-        line['angle'].append(min_theta + n * theta_step)
+        line['angle'].append(int((min_theta + n * theta_step) * 180 / np.pi))
     return line
 
 
@@ -111,6 +111,7 @@ def detect(img_gray, norm=1.2):
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
     img_gray = clahe.apply(img_gray)
     img_gray = remove_the_bg(img_gray)
+    img_h, img_w = img_gray.shape
 
     # 创建mser实例
     mser = cv2.MSER_create(_delta=2, _min_area=300, _max_area=800, _max_variation=0.7)
@@ -134,12 +135,14 @@ def detect(img_gray, norm=1.2):
     pts = np.zeros((len(boxes), 2))
     pts[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2
     pts[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2
+    pts = pts.astype(np.int)
     for pt in pts:
-        cv2.circle(img_gray, tuple(pt.astype(np.int).tolist()), 5, (0, 255, 0), 3)
-
+        # cv2.circle(img_gray, tuple(pt.astype(np.int).tolist()), 5, (0, 0, 0), 3)
+        cv2.line(img_gray, (pt[0], 0), (pt[0], img_h), (0, 0, 0), 2)
+        cv2.line(img_gray, (0, pt[1]), (img_w, pt[1]), (0, 0, 0), 2)
     # 利用霍夫变换查找点集中的直线，返回角度单位为弧度
-    lines = hough_lines_point_set(pts=pts)
-    print(lines)
+    # lines = hough_lines_point_set(pts, min_theta=0., max_theta=np.pi/6)
+    # print(lines)
     return img_gray
 
 
