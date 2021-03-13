@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 from simple_process import remove_the_bg
+from sklearn.ensemble import IsolationForest
 
 
 def find_local_maximums(num_rho, num_angle, threshold, accum):
@@ -179,7 +180,20 @@ def get_whole_roi(img_gray, pts, img_w, img_h):
     return img_new
 
 
-def detect(img_gray, norm=1.2):
+def screen_outliers(pts):
+    # 随机森林剔除异常点
+    model_iforest = IsolationForest(n_estimators=100,
+                                    max_samples="auto",
+                                    contamination=0.1,
+                                    max_features=0.1)
+    model_iforest.fit(pts)
+    exception_pts_anomaly = model_iforest.predict(pts)
+    pts_new = []
+    [pts_new.append(pts[i]) for i in range(len(pts)) if exception_pts_anomaly[i] == 1]
+    return np.array(pts_new, np.int)
+
+
+def detect(img_gray, norm=1.2, SCREEN_OR_NOT=0):
     # 自适应直方图均衡
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
     img_gray = clahe.apply(img_gray)
@@ -204,11 +218,17 @@ def detect(img_gray, norm=1.2):
     # 使用NMS算法抑制MSER检测效果
     boxes = non_max_suppress(np.array(boxes))
 
-    # 找到boxes的中心点并连线
+    # 找到boxes的中心点
     pts = np.zeros((len(boxes), 2))
     pts[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2
     pts[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2
     pts = pts.astype(np.int)
+
+    # 随机森林剔除异常点，可选
+    if SCREEN_OR_NOT == "y":
+        pts = screen_outliers(pts)
+    elif SCREEN_OR_NOT == "N":
+        print("We will not screen the outliers.")
 
     # get the text roi
     img_text_whole_roi = get_whole_roi(img_gray, pts, img_w, img_h)

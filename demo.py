@@ -20,16 +20,17 @@ def main():
     # 将两个图片拼接在一起
     print("----matching----")
     img_match = get_match_img(img_left, img_right)
-    cv2.imwrite("./match_result/" + str(number) + ".jpg", img_match)
+    # cv2.imwrite("./match_result/" + str(number) + ".jpg", img_match)
 
     # 利用直线检测进行文字方向矫正，使得文字正向
     print("----rotating----")
     img_rotated = rotate_img(img_match)
-    cv2.imwrite("./rotated_result/" + str(number) + ".jpg", img_rotated)
+    # cv2.imwrite("./rotated_result/" + str(number) + ".jpg", img_rotated)
 
     # 利用MSER检测找到文字大致范围并框选出来
     print("----finding the text----")
-    text_area, pts = detect(img_rotated, norm=2)
+    SCREEN_OR_NOT = input("Add outliers-screening or not: y/N ")
+    text_area, pts = detect(img_rotated, norm=2, SCREEN_OR_NOT=SCREEN_OR_NOT)
     img_text_area = get_roi(img_rotated, text_area, pts)
     cv2.imwrite("./find_text_result/" + str(number) + ".jpg", img_text_area)
 
