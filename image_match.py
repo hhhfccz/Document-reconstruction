@@ -5,20 +5,13 @@ import cv2
 from simple_process import remove_the_bg
 
 
-def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
-    # 获取图片大小，调整图像大小，使得两张图像大小相同
-    h, w = img_left.shape[:2]
-
-    # 取出底色，避免干扰
-    img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
-    img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
-
+def match_sift(img1, img2):
     # 创建SIFT对象
     sift = cv2.SIFT_create()
 
     # 寻找关键点和描述符
-    keypoint1, features1 = sift.detectAndCompute(img_left_g, None)
-    keypoint2, features2 = sift.detectAndCompute(img_right_g, None)
+    keypoint1, features1 = sift.detectAndCompute(img1, None)
+    keypoint2, features2 = sift.detectAndCompute(img2, None)
 
     # 设置FLANN参数，如果取0极为耗费时间
     FLANN_INDEX_KDTREE = 1
@@ -29,7 +22,36 @@ def get_match_img(img_left, img_right, number, MIN_MATCH_COUNT=10, norm=0.75):
     flann = cv2.FlannBasedMatcher(index_params, search_params)
 
     # 利用knnMatch匹配处理，并将结果返回给matches，请确保k=2
-    matches = flann.knnMatch(features1, features2, k=2)
+    matches = flann.knnMatch(np.array(features1, np.float32),
+                             np.array(features2, np.float32), k=2)
+
+    return matches, keypoint1, keypoint2
+
+
+def match_orb(img1, img2):
+    # 创建ORB对象
+    orb = cv2.ORB_create()
+
+    # 寻找关键点和描述符
+    keypoint1, features1 = orb.detectAndCompute(img1, None)
+    keypoint2, features2 = orb.detectAndCompute(img2, None)
+
+    # BFMatcher匹配（不能使用FLANN）
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(features1, features2, k=2)
+
+    return matches, keypoint1, keypoint2
+
+
+def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.8):
+    # 获取图片大小，调整图像大小，使得两张图像大小相同
+    h, w = img_left.shape[:2]
+
+    # 取出底色，避免干扰
+    img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
+    img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
+
+    matches, keypoint1, keypoint2 = match_sift(img_left_g, img_right_g)
 
     if len(matches) > MIN_MATCH_COUNT:
         # 得到两幅待拼接图的匹配点集

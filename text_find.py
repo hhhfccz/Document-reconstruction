@@ -137,7 +137,31 @@ def level_map(img_gray):
             list_mapping = []
         if len(lists_mapping) == 0 or (len(lists_mapping) != 0 and list_mapping != lists_mapping[-1]):
             lists_mapping.append(list_mapping)
-    return lists_mapping
+
+    lists_mapping_new = []
+    for list_mapping in lists_mapping:
+        if list_mapping not in lists_mapping_new:
+            lists_mapping_new.append(list_mapping)
+    return lists_mapping_new
+
+
+def get_roi(img_gray, lists_mapping):
+    h, w = img_gray.shape
+    lists_mapping = trans_min_max(lists_mapping)
+    for list_mapping in lists_mapping:
+        pt1 = np.array([0, list_mapping[0]], np.int).tolist()
+        pt2 = np.array([w, list_mapping[1]], np.int).tolist()
+        cv2.rectangle(img_gray, tuple(pt1), tuple(pt2), (0, 255, 0), 5)
+    return img_gray
+
+
+def trans_min_max(lists_mapping):
+    length = len(lists_mapping)
+    lists_mapping_new = np.zeros((length, 2))
+    for i in range(length):
+        list_mapping = lists_mapping[i]
+        lists_mapping_new[i, :] = [list_mapping[0], list_mapping[-1]]
+    return lists_mapping_new.astype(np.int)
 
 
 def detect(img_gray, norm=1.2):
@@ -181,14 +205,15 @@ def detect(img_gray, norm=1.2):
     img_new_2 = cv2.morphologyEx(img_new_2, cv2.MORPH_OPEN, np.ones((5, 5)))
     img_new = img_new_1 + img_new_2
 
+    # get the lines
     lists_mapping = level_map(img_new)
-    [lists_mapping.remove(list_mapping) for list_mapping in lists_mapping if len(list_mapping) <= 5]
-    print(lists_mapping)
+    lists_mapping_new = []
+    for list_mapping in lists_mapping:
+        if len(list_mapping) >= 1:
+            lists_mapping_new.append(list_mapping)
+    print(len(lists_mapping_new))
 
-    # 利用霍夫变换查找点集中的直线，返回角度单位为弧度
-    # lines = hough_lines_point_set(pts, min_theta=0., max_theta=np.pi/6)
-    # print(lines)
-    return img_new
+    return lists_mapping_new
 
 
 if __name__ == '__main__':
