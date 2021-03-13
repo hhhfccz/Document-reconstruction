@@ -126,6 +126,7 @@ def level_map(img_gray):
             map_ans.append(i)
     # print(map_ans)
 
+    # 判断是否存在连续序列，并初步提取
     lists_mapping = []
     list_mapping = []
     for i in range(1, len(map_ans)):
@@ -138,6 +139,7 @@ def level_map(img_gray):
         if len(lists_mapping) == 0 or (len(lists_mapping) != 0 and list_mapping != lists_mapping[-1]):
             lists_mapping.append(list_mapping)
 
+    # 去重
     lists_mapping_new = []
     for list_mapping in lists_mapping:
         if list_mapping not in lists_mapping_new:
@@ -145,23 +147,36 @@ def level_map(img_gray):
     return lists_mapping_new
 
 
-def get_roi(img_gray, lists_mapping):
-    h, w = img_gray.shape
-    lists_mapping = trans_min_max(lists_mapping)
+def get_roi(img_gray, lists_mapping, pts):
     for list_mapping in lists_mapping:
-        pt1 = np.array([0, list_mapping[0]], np.int).tolist()
-        pt2 = np.array([w, list_mapping[1]], np.int).tolist()
-        cv2.rectangle(img_gray, tuple(pt1), tuple(pt2), (0, 255, 0), 5)
+        h_min = list_mapping[0]
+        h_max = list_mapping[-1]
+
+        # 检测行范围内pts的存在，并以存在的pts左右两端为文本行左右边界
+        pts_w = []
+        pts_h = pts[:, 1]
+        for i in range(len(pts_h)):
+            pt_h = pts_h[i]
+            if h_min-10 <= pt_h <= h_max+10:
+                pts_w.append(pts[i, 0])
+
+        pt1 = np.array([min(pts_w) - 10, h_min - 10], np.int).tolist()
+        pt2 = np.array([max(pts_w) + 10, h_max + 10], np.int).tolist()
+        cv2.rectangle(img_gray, tuple(pt1), tuple(pt2), 0, 5)
     return img_gray
 
 
-def trans_min_max(lists_mapping):
-    length = len(lists_mapping)
-    lists_mapping_new = np.zeros((length, 2))
-    for i in range(length):
-        list_mapping = lists_mapping[i]
-        lists_mapping_new[i, :] = [list_mapping[0], list_mapping[-1]]
-    return lists_mapping_new.astype(np.int)
+def get_whole_roi(img_gray, pts, img_w, img_h):
+    # get the text roi
+    img_new_1 = np.ones_like(img_gray) * 255
+    img_new_2 = np.ones_like(img_gray) * 255
+    for pt in pts:
+        cv2.line(img_new_1, (0, pt[1]), (img_w, pt[1]), 0, 1)
+        cv2.line(img_new_2, (pt[0], 0), (pt[0], img_h), 0, 1)
+    img_new_1 = cv2.morphologyEx(img_new_1, cv2.MORPH_OPEN, np.ones((5, 5)))
+    img_new_2 = cv2.morphologyEx(img_new_2, cv2.MORPH_OPEN, np.ones((5, 5)))
+    img_new = img_new_1 + img_new_2
+    return img_new
 
 
 def detect(img_gray, norm=1.2):
@@ -196,24 +211,17 @@ def detect(img_gray, norm=1.2):
     pts = pts.astype(np.int)
 
     # get the text roi
-    img_new_1 = np.ones_like(img_gray) * 255
-    img_new_2 = np.ones_like(img_gray) * 255
-    for pt in pts:
-        cv2.line(img_new_1, (0, pt[1]), (img_w, pt[1]), 0, 1)
-        cv2.line(img_new_2, (pt[0], 0), (pt[0], img_h), 0, 1)
-    img_new_1 = cv2.morphologyEx(img_new_1, cv2.MORPH_OPEN, np.ones((5, 5)))
-    img_new_2 = cv2.morphologyEx(img_new_2, cv2.MORPH_OPEN, np.ones((5, 5)))
-    img_new = img_new_1 + img_new_2
+    img_text_whole_roi = get_whole_roi(img_gray, pts, img_w, img_h)
 
     # get the lines
-    lists_mapping = level_map(img_new)
+    lists_mapping = level_map(img_text_whole_roi)
     lists_mapping_new = []
     for list_mapping in lists_mapping:
         if len(list_mapping) >= 1:
             lists_mapping_new.append(list_mapping)
-    print(len(lists_mapping_new))
+    # print(len(lists_mapping_new))
 
-    return lists_mapping_new
+    return lists_mapping_new, pts
 
 
 if __name__ == '__main__':

@@ -29,8 +29,8 @@ def main():
 
     # 利用MSER检测找到文字大致范围并框选出来
     print("----finding the text----")
-    text_area = detect(img_rotated, norm=2)
-    img_text_area = get_roi(img_rotated, text_area)
+    text_area, pts = detect(img_rotated, norm=2)
+    img_text_area = get_roi(img_rotated, text_area, pts)
     cv2.imwrite("./find_text_result/" + str(number) + ".jpg", img_text_area)
 
     print("----Done----")
