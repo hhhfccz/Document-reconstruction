@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/11/14
 import cv2
 import numpy as np
-from simple_process import remove_the_bg
+from utils import remove_the_bg
 from sklearn.ensemble import IsolationForest
 
 

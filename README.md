@@ -29,19 +29,30 @@ The purpose of the hardware part of this project:
 > 
 > Others need to be pushed around by DDL / hhhfccz.
 
-# How to do
+# What should we do
 
 I will introduce the overall project implementation idea according to two directions: software part and hardware part
 
 ## Software part
 
-### Image stitching
+### Image Matching
 
-**SIFT & knnMatch**, so easy, pass
+wu use **SIFT/ORB & knnMatch**， the basic idea of this module is as follows:
 
-you can see test samples in ['match_result'](https://github.com/hhhfccz/Document-reconstruction/tree/main/match_result)
+1.  Extracte the features of the two images
+2.  Feature points matching
+3.  Connect the matched feature points
+4.  Homograph
 
-### Text orientation correction in images
+> **Note:**
+>
+> when you use ORB, the homograph will not work
+>
+> please wait until we has fixed this bug
+
+### Page Dewarping
+
+we use the 
 
 **Hough Linear Inspection & math**, so easy, pass
 

@@ -1,2 +1,4 @@
 /.idea/
 /__pycache__/
+/im2latex/__pycache__/
+/im2latex/dataset/dataset.zip

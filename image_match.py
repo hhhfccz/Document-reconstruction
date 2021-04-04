@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/8/25
 import numpy as np
 import cv2
-from simple_process import remove_the_bg
+from utils import remove_the_bg
 
 
 def match_sift(img1, img2):
