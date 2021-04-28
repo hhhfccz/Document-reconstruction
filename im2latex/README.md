@@ -11,7 +11,9 @@ pwd：gje5
 
 1.  modify the path of dataset
 
-3.  run train.py
+2.  run train.py
+
+> please use linux 
 
 ### modify the path of dataset
 
@@ -31,7 +33,7 @@ in `/attention_ocr.pytorch/config.py` line 27 and line 28
 
 should be modified by your own annotations.json path
 
-then, run `python train.py --cuda`
+then, run `python train.py`
 
 ## Pretrained Model
 

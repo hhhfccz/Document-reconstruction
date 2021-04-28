@@ -1,6 +1,5 @@
 import time
 import numpy as np
-import os
 
 import argparse
 import random
@@ -13,6 +12,9 @@ from utils import *
 from dataset import *
 from model_ocr import *
 
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
@@ -26,34 +28,36 @@ parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. de
 parser.add_argument('--cuda', action='store_true', default=True, help='enables cuda')
 parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
 parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
-parser.add_argument('--experiment', default='./expr/attention_ocr', help='Where to store samples and models')
-parser.add_argument('--displayInterval', type=int, default=100, help='Interval to be displayed')
+parser.add_argument('--experiment',
+                    default='/home/hhhfccz/im2latex/attention_ocr.pytorch/expr/attention_ocr',
+                    help='Where to store samples and models')
+parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
 parser.add_argument('--valInterval', type=int, default=1, help='Interval to be displayed')
 parser.add_argument('--saveInterval', type=int, default=2, help='Interval to be displayed')
 parser.add_argument('--adam', default=True, action='store_true', help='Whether to use adam (default is rmsprop)')
 parser.add_argument('--adadelta', action='store_true', help='Whether to use adadelta (default is rmsprop)')
 parser.add_argument('--keep_ratio', action='store_true', help='whether to keep ratio for image resize')
-parser.add_argument('--random_sample', default=True, action='store_true', help='whether to sample the dataset with random sampler')
+parser.add_argument('--random_sample', default=True, action='store_true',
+                    help='whether to sample the dataset with random sampler')
 parser.add_argument('--max_width', type=int, default=71, help='the width of the featuremap out from cnn')
 opt = parser.parse_args()
-print(opt)
+print("------init------")
 
-
-if opt.experiment is None:
-    opt.experiment = 'expr'
-os.system('mkdir -p {0}'.format(opt.experiment))
+# if opt.experiment is None:
+#     opt.experiment = 'expr'
+# os.system('mkdir -p {0}'.format(opt.experiment))
 
 opt.manualSeed = 118
-print("Random Seed: ", opt.manualSeed)
+# print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 np.random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
+# cudnn.enabled = True
 # cudnn.benchmark = True
 
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-
 
 train_dataset = Im2latex_Dataset(split="train", transform=None)
 assert train_dataset
@@ -61,13 +65,15 @@ if not opt.random_sample:
     sampler = RandomSequentialSampler(train_dataset, opt.batchSize)
 else:
     sampler = None
+
 train_loader = dataloader.DataLoader(
     train_dataset, batch_size=opt.batchSize,
     shuffle=False, sampler=sampler,
     num_workers=int(opt.workers),
     collate_fn=AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio)
-    )
+)
 
+# 初始化2
 test_dataset = Im2latex_Dataset(split="validate", transform=ResizeNormalize(opt.imgH, opt.imgW))
 
 chars = get_chars("train")
@@ -77,8 +83,8 @@ nc = 1
 # criterion = torch.nn.CrossEntropyLoss()
 criterion = torch.nn.NLLLoss()
 
-encoder = CNN(opt.imgH, nc, opt.nh)
-decoder = decoderV2(opt.nh, nclass, dropout_p=0.1, batch_size=opt.batchSize)        
+encoder = encoderV1(opt.imgH, nc, opt.nh)
+decoder = decoderV2(opt.nh, nclass, dropout_p=0.1, batch_size=opt.batchSize)
 # For prediction of an indefinite long sequence
 encoder.apply(weights_init)
 decoder.apply(weights_init)
@@ -98,11 +104,11 @@ loss_avg = Averager()
 # setup optimizer
 if opt.adam:
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=opt.lr,
-                           betas=(opt.beta1, 0.999)
-                           )
+                                   betas=(opt.beta1, 0.999)
+                                   )
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=opt.lr,
-                        betas=(opt.beta1, 0.999)
-                        )
+                                   betas=(opt.beta1, 0.999)
+                                   )
 elif opt.adadelta:
     optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr)
 else:
@@ -110,29 +116,31 @@ else:
     decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=opt.lr)
 
 
-def trainBatch(opt, train_iter, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion=torch.nn.NLLLoss()):
+def trainBatch(train_iter, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion=torch.nn.NLLLoss()):
     if opt.cuda:
         encoder.cuda()
         decoder.cuda()
         criterion = criterion.cuda()
 
-    data = train_iter.next()
+    data = train_iter.__next__()
     img, text = data
-    if opt.cuda:
-        img = img.cuda()
-        text = text.cuda()
-    # print(img.shape)
     decoder_input = text[0][0]
     decoder_hidden = decoder.initHidden(img.size(0))
     encoder_outputs = encoder(img)
-    # print(decoder_input.shape, decoder_hidden.shape, encoder_outputs.shape)
+    if opt.cuda:
+        decoder_input = decoder_input.cuda()
+        decoder_hidden = decoder_hidden.cuda()
+        encoder_outputs = encoder_outputs.cuda()
 
     loss = 0.0
     for i in range(1, len(text[0])):
         decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_outputs)
-        # print(criterion(decoder_output, text[0][i].unsqueeze(0)))
-        loss += criterion(decoder_output, text[0][i].unsqueeze(0))
-        decoder_input = text[0][i]
+        if opt.cuda():
+            loss += criterion(decoder_output, text[0][i].cuda().unsqueeze(0))
+            decoder_input = text[0][i].cuda()
+        else:
+            loss += criterion(decoder_output, text[0][i].unsqueeze(0))
+            decoder_input = text[0][i]
 
     encoder.zero_grad()
     decoder.zero_grad()
@@ -148,31 +156,33 @@ if __name__ == '__main__':
     for epoch in range(opt.niter):
         train_iter = iter(train_loader)
         i = 0
-        while i < len(train_loader)-1:
+        while i < len(train_loader) - 1:
             for e, d in zip(encoder.parameters(), decoder.parameters()):
                 e.requires_grad = True
                 d.requires_grad = True
             encoder.train()
             decoder.train()
-            cost = trainBatch(opt, train_iter, encoder, decoder, encoder_optimizer, decoder_optimizer)
+            # print("Batch: " + str(i))
+            cost = trainBatch(train_iter, encoder, decoder, encoder_optimizer, decoder_optimizer)
             loss_avg.add(cost)
             i += 1
 
             if i % opt.displayInterval == 0:
                 print('[%d/%d][%d/%d] Loss: %f' %
-                    (epoch, opt.niter, i, len(train_loader), loss_avg.val()), end=' '
-                    )
+                      (epoch, opt.niter, i, len(train_loader), loss_avg.val()), end=' '
+                      )
                 loss_avg.reset()
                 t1 = time.time()
-                print('time: %d' % (t1-t0))
+                print('Time: %s' % str(t1 - t0))
                 t0 = time.time()
 
         # do checkpointing
         if epoch % opt.saveInterval == 0:
             # val(opt, encoder, decoder, 1, dataset=test_dataset)
             torch.save(
-                encoder.state_dict(), '{0}/encoder_epoch_{1}.pth'.format(opt.experiment, epoch)
-                )
+                encoder.state_dict(), '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+            )
             torch.save(
-                decoder.state_dict(), '{0}/decoder_epoch_{1}.pth'.format(opt.experiment, epoch)
-                )
+                decoder.state_dict(), '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+            )
+        torch.cuda.empty_cache()
