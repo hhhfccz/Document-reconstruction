@@ -7,13 +7,17 @@ After downloading the dataset of im2latex, you should unzip it in `/dataset/`
 link：https://pan.baidu.com/s/1volnYe6zMGYDz_iWuMc3VA 
 pwd：gje5 
 
+## requirements.txt
+
+> torch 1.6.0
+> 
+> opencv-python
+
 ## How to use
 
 1.  modify the path of dataset
 
 2.  run train.py
-
-> please use linux 
 
 ### modify the path of dataset
 
