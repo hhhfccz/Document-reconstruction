@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 import argparse
 
 import numpy as np
@@ -13,10 +14,11 @@ from utils import *
 from dataset import *
 from model_ocr import *
 
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-class DataPrefetcher:
+class data_prefetcher():
 
     def __init__(self, loader):
         self.loader = iter(loader)
@@ -68,19 +70,18 @@ def get_decoder_input(texts, i):
     return decoder_input
 
 
-def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, times, epoch,
-               criterion=torch.nn.NLLLoss()):
-    if opt.cuda:
+def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, times, epoch, criterion=torch.nn.NLLLoss()):
+    if not opt.cuda:
+        decoder_input = get_decoder_input(text, 0)
+        decoder_hidden = decoder.initHidden(opt.batchSize)
+        encoder_output = encoder(img)
+    else:
         encoder.cuda()
         decoder.cuda()
         criterion = criterion.cuda()
         decoder_input = text[:, 0].cuda()
-        decoder_hidden = decoder.initHidden().cuda()
+        decoder_hidden.cuda()
         encoder_output = encoder(img).cuda()
-    else:
-        decoder_input = get_decoder_input(text, 0)
-        decoder_hidden = decoder.initHidden()
-        encoder_output = encoder(img)
 
     loss = 0.0
     for i in range(1, len(text[0])):
@@ -107,11 +108,86 @@ def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_opti
     return loss
 
 
+def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLLLoss(), batch_size=1, get_loss=False):
+    num_correct = 0
+    num_total = 0
+    test_iter = iter(data_loader)
+    if not get_loss:
+        max_iter = min(max_iter, len(data_loader))
+        for i in range(np.random.randint(0, len(data_loader)-1)):
+            data = test_iter.__next__()
+    else:
+        max_iter = len(data_loader)
+
+    if opt.cuda:
+        encoder.cuda()
+        decoder.cuda()
+        criterion = criterion.cuda()
+
+    for e, d in zip(encoder.parameters(), decoder.parameters()):
+        e.requires_grad = False
+        d.requires_grad = False
+
+    encoder.eval()
+    decoder.eval()
+
+    loss_val_avg = Averager()
+
+    for i in range(1, max_iter+1):
+        data = test_iter.__next__()
+        img, text = data
+
+        if not opt.cuda:
+            decoder_input = get_decoder_input(text, 0)
+            decoder_hidden = decoder.initHidden(batch_size)
+            encoder_output = encoder(img)
+            decoder_attentions = torch.zeros(len(text[0]), 8)
+            # TODO, 8 is the width of the featuremap out from cnn, it may be the 8 * batch_size
+        else:
+            img.cuda()
+            decoder_input.cuda()
+            decoder_hidden.cuda()
+            encoder_output = encoder(img).cuda()
+            decoder_attentions.cuda()
+
+
+        loss_val = 0
+        decoded_label = []
+
+        for l in range(1, len(text[0])):
+            decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
+
+            loss_val += criterion(decoder_output, decoder_input)
+            loss_val_avg.add(loss_val)
+
+            decoder_attentions[l-1] = decoder_attention.data
+            topv, topi = decoder_output.data.topk(1)
+            decoder_input = topi.squeeze(1)
+            decoded_label.append(decoder_input)
+            # print(decoder_input)
+
+            if decoder_input == 1:
+                break
+
+        pred_text = torch.from_numpy(np.array(decoded_label))
+        for pred, target in zip(pred_text, text[0]):
+            num_total += 1
+            if target == torch.tensor(1):
+                break
+            if pred == target:
+                num_correct += 1
+
+    # print(num_correct, num_total)
+    if not get_loss:
+        return num_correct / float(num_total)
+    else:
+        return num_correct / float(num_total), loss_val
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--workers', type=int, default=4,
-                        help='number of data loading workers, you had better put it 4 times of your gpu')
-    parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
+    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers, you had better put it 4 times of your gpu')
+    parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
     parser.add_argument('--imgH', type=int, default=32, help='the height of the input image to network')
     parser.add_argument('--imgW', type=int, default=280, help='the width of the input image to network')
     parser.add_argument('--nh', type=int, default=256, help='size of the lstm hidden state')
@@ -120,16 +196,14 @@ def main():
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
     parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
     parser.add_argument('--preload', action='store_true', default=False, help='enables preload')
-    parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
-    parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
+    # parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
+    # parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
     parser.add_argument('--experiment',
-                        default='~/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
+                        default='/home/hhhfccz/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
                         help='Where to store samples and models')
     parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
-    parser.add_argument('--valInterval', type=int, default=2, help='Interval to be displayed')
     parser.add_argument('--saveInterval', type=int, default=2, help='Interval to be displayed')
     parser.add_argument('--adam', default=True, action='store_true', help='Whether to use adam (default is rmsprop)')
-    parser.add_argument('--adadelta', action='store_true', help='Whether to use adadelta (default is rmsprop)')
     parser.add_argument('--keep_ratio', action='store_true', help='whether to keep ratio for image resize')
     parser.add_argument('--random_sample', default=True, action='store_true',
                         help='whether to sample the dataset with random sampler')
@@ -137,7 +211,6 @@ def main():
 
     print("------init------")
     opt.manualSeed = 118
-    random.seed(opt.manualSeed)
     np.random.seed(opt.manualSeed)
     torch.manual_seed(opt.manualSeed)
     nclass = len(get_chars("train")) + 3
@@ -153,10 +226,11 @@ def main():
     if not opt.cuda and opt.preload:
         assert (opt.preload == True and not CUDA_AVAILABLE), "ERROR: You don't have a CUDA device"
     if opt.cuda and not opt.preload:
-        print("WARNING: You choose the CUDA, so you could run with --preload")
+        print("WARNING: You choosed the CUDA, so you could run with --preload")
 
-    # train_init
+    # train dataset init
     train_dataset = Im2latex_Dataset(split="train", transform=None)
+    print("the correspondence between tex chars and numbers: \n", json.dumps(train_dataset.chars2num, indent=4, sort_keys=True))
 
     assert train_dataset
     if not opt.random_sample:
@@ -166,22 +240,28 @@ def main():
 
     train_loader = dataloader.DataLoader(
         train_dataset, batch_size=opt.batchSize,
-        shuffle=False, sampler=sampler,
+        shuffle=True, sampler=sampler,
         num_workers=int(opt.workers),
         collate_fn=AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio),
         pin_memory=True
     )
     length = len(train_loader)
 
-    # test_init
-    # test_dataset = Im2latex_Dataset(split="validate", transform=ResizeNormalize(opt.imgH, opt.imgW))
+    # test dataset init
+    test_dataset = Im2latex_Dataset(split="test", transform=ResizeNormalize(opt.imgH, opt.imgW))
+
+    test_loader = dataloader.DataLoader(
+        test_dataset, batch_size=1,
+        shuffle=True, num_workers=int(opt.workers),
+        pin_memory=True
+        )
 
     # network init
     encoder = encoderV1(opt.imgH, nc, opt.nh)
-    decoder = decoderV2(opt.nh, nclass, dropout_p=0.3, batch_size=opt.batchSize)
+    decoder = decoderV2(opt.nh, nclass, dropout_p=0.2, batch_size=opt.batchSize)
     # For prediction of an indefinite long sequence
-    encoder.apply(weights_init)
-    decoder.apply(weights_init)
+    # encoder.apply(weights_init)
+    # decoder.apply(weights_init)
     # continue training or use the pretrained model to initial the parameters of the encoder and decoder
     if opt.encoder:
         print('loading pretrained encoder model from %s' % opt.encoder)
@@ -200,21 +280,20 @@ def main():
 
     # setup optimizer
     if opt.adam:
-        encoder_optimizer = optim.Adam(encoder.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999), amsgrad=True)
+        encoder_optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr)
         decoder_optimizer = optim.Adam(decoder.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999), amsgrad=True)
-    elif opt.adadelta:
-        optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr)
     else:
         encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=opt.lr)
         decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=opt.lr)
 
     # train
+    print("-----train-----")
+    t0 = time.time()
     for epoch in range(opt.niter):
         i = 0
-        t0 = time.time()
 
         if opt.preload:
-            prefetcher = DataPrefetcher(train_loader)
+            prefetcher = data_prefetcher(train_loader)
             img, text = prefetcher.__next__()
         else:
             train_iter = iter(train_loader)
@@ -228,30 +307,31 @@ def main():
             encoder.train()
             decoder.train()
 
-            cost = trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, i, epoch,
-                              criterion=criterion)
+            cost = trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, i, epoch, criterion=criterion)
             loss_avg.add(cost)
             i += 1
 
             if opt.preload:
-                img, text = prefetcher.next()
+                img, text = prefetcher.__next__()
             else:
                 data = train_iter.__next__()
                 img, text = data
 
             if i % opt.displayInterval == 0:
-                print('[%d/%d][%d/%d] CrossEntropyLoss: %f' % (epoch, opt.niter, i, length, loss_avg.val()), end=' ')
+                # do val
+                acc = valid(opt, encoder, decoder, data_loader=test_loader, criterion=criterion)
+
+                print('[%d/%d][%d/%d] Loss: %f Acc: %f' % (epoch, opt.niter, i, length, loss_avg.val(), acc), end=' ')
+
                 loss_avg.reset()
+
                 t1 = time.time()
                 print('Time: %s' % str(t1 - t0))
                 t0 = time.time()
 
-        # do checkpointing
-        if epoch % opt.valInterval == 0:
-            # val(opt, encoder, decoder, 1, dataset=test_dataset)
-            pass
-
         # do saving
+        acc_val, loss_val = valid(opt, encoder, decoder, data_loader=test_loader, criterion=criterion, get_loss=True)
+        print('Time: ', time.strftime('%Y-%m-%d %H:%M:%S'), 'Acc: %f, Loss: %f' % (acc_val, loss_val), 'it\'s time to save one model')
         if epoch % opt.saveInterval == 0:
             torch.save(
                 encoder.state_dict(), '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
@@ -259,6 +339,7 @@ def main():
             torch.save(
                 decoder.state_dict(), '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
             )
+        print('Model saved')
 
     if opt.cuda:
         torch.cuda.empty_cache()

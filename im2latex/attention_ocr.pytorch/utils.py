@@ -134,7 +134,7 @@ def get_data(split):
     # print(formulas_strs)
     print("Data of " + split + ", Done!")
 
-    return targets_tensors
+    return targets_tensors, chars2num
 
 
 def weights_init(model):

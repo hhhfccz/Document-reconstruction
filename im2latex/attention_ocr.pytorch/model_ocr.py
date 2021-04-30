@@ -15,7 +15,7 @@ def accuracy(outputs, labels):
 def ConvBlock(in_channels, out_channels, pool=False):
     layers = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
              nn.BatchNorm2d(out_channels),
-             nn.ReLU(inplace=True)]
+             nn.LeakyReLU(inplace=True)]
     if pool:
         layers.append(nn.MaxPool2d(2, 2))
     return nn.Sequential(*layers)
@@ -27,7 +27,7 @@ class BidirectionalLSTM(nn.Module):
         super(BidirectionalLSTM, self).__init__()
 
         self.rnn = nn.LSTM(nIn, nHidden, bidirectional=True)
-        self.embedding = nn.Linear(nHidden * 2, nOut)
+        self.embedding = nn.Linear(nHidden * 2, nOut, bias=False)
 
     def forward(self, input):
         recurrent, _ = self.rnn(input)
@@ -61,24 +61,6 @@ class encoderV1(nn.Module):
         self.conv5 = ConvBlock(256, 512, pool=True)
         self.conv6 = ConvBlock(512, 512, pool=True)
         self.res3 = nn.Sequential(ConvBlock(512, 512), ConvBlock(512, 512))
-
-        # self.cnn = nn.Sequential(
-        #               nn.Conv2d(nc, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), 
-        #               # 64x16x50
-        #               nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2), 
-        #               # 128x8x25
-        #               nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True), 
-        #               # 256x8x25
-        #               nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), 
-        #               # 256x4x25
-        #               nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True), 
-        #               # 512x4x25
-        #               nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2,2), (2,1), (0,1)), 
-        #               # 512x2x25
-        #               nn.Conv2d(512, 512, 2, 1, 0), nn.BatchNorm2d(512), nn.ReLU(True),
-        #               # 512x1x25
-        #               )
-        # previous cnn network
 
         self.rnn = nn.Sequential(
             BidirectionalLSTM(512, nh, nh),
@@ -162,7 +144,7 @@ class Attentiondecoder(nn.Module):
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
         self.gru = nn.GRU(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.out = nn.Linear(self.hidden_size, self.output_size, bias=False)
 
     def forward(self, input, hidden, encoder_outputs):
         # calculate the attention weight and weight * encoder_output feature
@@ -212,26 +194,30 @@ class AttentiondecoderV2(nn.Module):
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
         self.gru = nn.GRU(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.out = nn.Linear(self.hidden_size, self.output_size, bias=False)
 
         # test
         self.vat = nn.Linear(hidden_size, 1)
 
     def forward(self, input_embed, hidden, encoder_outputs):
         embedded = self.embedding(input_embed)
-        # 前一次的输出进行词嵌入
         embedded = self.dropout(embedded)
         # print(embedded.shape, hidden.shape)
 
         # test
         batch_size = encoder_outputs.shape[1]
         # print(batch_size)
-
+        # print(hidden.shape, encoder_outputs.shape)
         alpha = hidden + encoder_outputs
+        # print(alpha.shape)
         alpha = alpha.view(-1, alpha.shape[-1])
+        # print(alpha.shape)
         attn_weights = self.vat(torch.tanh(alpha))
+        # print(attn_weights.shape)
         attn_weights = attn_weights.view(-1, 1, batch_size).permute((2, 1, 0))
+        # print(attn_weights.shape)
         attn_weights = F.softmax(attn_weights, dim=2)
+        # print(attn_weights.shape)
 
         attn_applied = torch.matmul(attn_weights, encoder_outputs.permute((1, 0, 2)))
         # print(embedded.shape, attn_applied.view(-1, self.hidden_size).shape)
@@ -289,16 +275,15 @@ class decoderV2(nn.Module):
     def forward(self, input, hidden, encoder_outputs):
         return self.decoder(input, hidden, encoder_outputs)
 
-    def initHidden(self):
-        result = Variable(torch.zeros(1, self.batch_size, self.hidden_size))
+    def initHidden(self, batch_size):
+        result = Variable(torch.zeros(1, batch_size, self.hidden_size))
         return result
 
 
 if __name__ == '__main__':
     encoder = encoderV1(imgH=32, nc=10, nh=256)
-    # decoder = decoder(nh=256, nclass=100, dropout_p=0.1, max_length=max_width) 
-    # max_length:w/4,为encoder特征提取之后宽度方向上的序列长度
     decoder = decoderV2(nh=256, nclass=100, dropout_p=0.1)
+
     encoder.apply(weights_init)
     decoder.apply(weights_init)
     # For prediction of an indefinite long sequence

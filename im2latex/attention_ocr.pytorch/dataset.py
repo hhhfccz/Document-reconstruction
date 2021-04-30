@@ -22,8 +22,9 @@ class Im2latex_Dataset(Dataset):
         self.annotations = annotations
         self.length = len(annotations)
 
-        labels = get_data(split)
+        labels, chars2num = get_data(split)
         self.labels = labels
+        self.chars2num = chars2num
 
     def __len__(self):
         return self.length
@@ -35,11 +36,12 @@ class Im2latex_Dataset(Dataset):
 
         try:
             formula_img = cv2.imread(formula_img_path, 0)
+            # formula_img = torch.from_numpy(formula_img)
         except IOError:
             print("Corrupted image for %d" % idx)
 
         if self.transform is not None:
-            img = self.transform(img)
+            formula_img = self.transform(formula_img)
 
         formula_label = self.labels[idx]
 
@@ -54,7 +56,9 @@ class ResizeNormalize():
         self.toTensor = transforms.ToTensor()
 
     def __call__(self, img):
-        img = cv2.resize(img, (self.imgW, self.imgH))
+        # print(img.shape)
+        img = cv2.resize(img, (self.imgW, self.imgH), interpolation=cv2.INTER_CUBIC)
+        # print(img)
         img = self.toTensor(img)
         img.sub_(0.5).div_(0.5)
         return img
