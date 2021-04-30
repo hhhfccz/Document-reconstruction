@@ -16,9 +16,7 @@ from model_ocr import *
 
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-
-class data_prefetcher():
+class DataPrefetcher:
 
     def __init__(self, loader):
         self.loader = iter(loader)
@@ -293,7 +291,7 @@ def main():
         i = 0
 
         if opt.preload:
-            prefetcher = data_prefetcher(train_loader)
+            prefetcher = DataPrefetcher(train_loader)
             img, text = prefetcher.__next__()
         else:
             train_iter = iter(train_loader)
