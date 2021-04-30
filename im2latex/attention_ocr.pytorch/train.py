@@ -15,7 +15,7 @@ from dataset import *
 from model_ocr import *
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 class data_prefetcher():
@@ -80,7 +80,7 @@ def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_opti
         decoder.cuda()
         criterion = criterion.cuda()
         decoder_input = text[:, 0].cuda()
-        decoder_hidden.cuda()
+        decoder_hidden = decoder.initHidden(opt.batchSize).cuda()
         encoder_output = encoder(img).cuda()
 
     loss = 0.0
@@ -108,7 +108,7 @@ def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_opti
     return loss
 
 
-def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLLLoss(), batch_size=1, get_loss=False):
+def valid(opt, encoder, decoder, data_loader, max_iter=5, criterion=torch.nn.NLLLoss(), batch_size=1, get_loss=False):
     num_correct = 0
     num_total = 0
     test_iter = iter(data_loader)
@@ -131,27 +131,26 @@ def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLL
     encoder.eval()
     decoder.eval()
 
+    loss_val = 0
     loss_val_avg = Averager()
 
     for i in range(1, max_iter+1):
         data = test_iter.__next__()
         img, text = data
+        decoder_attentions = torch.zeros(len(text[0]), 8)
 
         if not opt.cuda:
             decoder_input = get_decoder_input(text, 0)
             decoder_hidden = decoder.initHidden(batch_size)
             encoder_output = encoder(img)
-            decoder_attentions = torch.zeros(len(text[0]), 8)
             # TODO, 8 is the width of the featuremap out from cnn, it may be the 8 * batch_size
         else:
-            img.cuda()
-            decoder_input.cuda()
-            decoder_hidden.cuda()
+            img = img.cuda()
+            decoder_input = text[:, i].cuda()
+            decoder_hidden = decoder.initHidden(batch_size).cuda()
             encoder_output = encoder(img).cuda()
             decoder_attentions.cuda()
 
-
-        loss_val = 0
         decoded_label = []
 
         for l in range(1, len(text[0])):
@@ -163,7 +162,7 @@ def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLL
             decoder_attentions[l-1] = decoder_attention.data
             topv, topi = decoder_output.data.topk(1)
             decoder_input = topi.squeeze(1)
-            decoded_label.append(decoder_input)
+            decoded_label.append(int(decoder_input))
             # print(decoder_input)
 
             if decoder_input == 1:
@@ -186,8 +185,9 @@ def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLL
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers, you had better put it 4 times of your gpu')
-    parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
+    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers, you had better put it '
+                                                               '4 times of your gpu')
+    parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
     parser.add_argument('--imgH', type=int, default=32, help='the height of the input image to network')
     parser.add_argument('--imgW', type=int, default=280, help='the width of the input image to network')
     parser.add_argument('--nh', type=int, default=256, help='size of the lstm hidden state')
@@ -196,10 +196,10 @@ def main():
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
     parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
     parser.add_argument('--preload', action='store_true', default=False, help='enables preload')
-    # parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
-    # parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
+    parser.add_argument('--encoder', type=str, default='', help="path to encoder (to continue training)")
+    parser.add_argument('--decoder', type=str, default='', help='path to decoder (to continue training)')
     parser.add_argument('--experiment',
-                        default='/home/hhhfccz/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
+                        default='D:/Code/Document-reconstruction/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
                         help='Where to store samples and models')
     parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
     parser.add_argument('--saveInterval', type=int, default=2, help='Interval to be displayed')
@@ -260,8 +260,8 @@ def main():
     encoder = encoderV1(opt.imgH, nc, opt.nh)
     decoder = decoderV2(opt.nh, nclass, dropout_p=0.2, batch_size=opt.batchSize)
     # For prediction of an indefinite long sequence
-    # encoder.apply(weights_init)
-    # decoder.apply(weights_init)
+    encoder.apply(weights_init)
+    decoder.apply(weights_init)
     # continue training or use the pretrained model to initial the parameters of the encoder and decoder
     if opt.encoder:
         print('loading pretrained encoder model from %s' % opt.encoder)
@@ -331,7 +331,9 @@ def main():
 
         # do saving
         acc_val, loss_val = valid(opt, encoder, decoder, data_loader=test_loader, criterion=criterion, get_loss=True)
-        print('Time: ', time.strftime('%Y-%m-%d %H:%M:%S'), 'Acc: %f, Loss: %f' % (acc_val, loss_val), 'it\'s time to save one model')
+        print('Time: ', time.strftime('%Y-%m-%d %H:%M:%S'), 'Acc: %f, Loss: %f' % (acc_val, loss_val), 'it\'s time to '
+                                                                                                       'save one '
+                                                                                                       'model')
         if epoch % opt.saveInterval == 0:
             torch.save(
                 encoder.state_dict(), '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)

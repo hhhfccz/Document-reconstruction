@@ -99,7 +99,7 @@ class AlignCollate(object):
         self.min_ratio = min_ratio
 
     def __call__(self, batch):
-        imgs, labels = zip(*batch)
+        images, labels = zip(*batch)
 
         imgH = self.imgH
         imgW = self.imgW
@@ -111,11 +111,11 @@ class AlignCollate(object):
             ratios.sort()
             max_ratio = ratios[-1]
             imgW = int(np.floor(max_ratio * imgH))
-            imgW = max(imgH * self.min_ratio, imgW)  
+            imgW = max(imgH * self.min_ratio, imgW)
             # assure imgH >= imgW
 
         transform = ResizeNormalize(imgH, imgW)
-        imgs = [transform(img) for img in imgs]
+        imgs = [transform(image) for image in images]
         imgs = torch.cat([t.unsqueeze(0) for t in imgs], 0)
 
         return imgs, labels

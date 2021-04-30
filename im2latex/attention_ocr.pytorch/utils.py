@@ -12,7 +12,7 @@ from config import *
 
 class Averager(object):
     """
-    Compute average for `torch.Variable` and `torch.Tensor`. 
+    Compute average for `torch.Variable` and `torch.Tensor`.
     """
     def __init__(self):
         self.reset()
