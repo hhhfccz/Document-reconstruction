@@ -36,7 +36,6 @@ class Im2latex_Dataset(Dataset):
 
         try:
             formula_img = cv2.imread(formula_img_path, 0)
-            # formula_img = torch.from_numpy(formula_img)
         except IOError:
             print("Corrupted image for %d" % idx)
 
@@ -119,3 +118,40 @@ class AlignCollate(object):
         imgs = torch.cat([t.unsqueeze(0) for t in imgs], 0)
 
         return imgs, labels
+
+
+class DataPrefetcher:
+
+    def __init__(self, loader):
+        self.loader = iter(loader)
+        self.stream = torch.cuda.Stream()
+        self.preload()
+
+    def __next__(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        img = self.img
+        text = self.text
+        if img is not None:
+            img.record_stream(torch.cuda.current_stream())
+            text.record_stream(torch.cuda.current_stream())
+        self.preload()
+        return img, text
+
+    def preload(self):
+        try:
+            self.next_input = next(self.loader)
+        except StopIteration:
+            self.next_input = None
+            return
+
+        with torch.cuda.stream(self.stream):
+            self.img, self.texts = self.next_input
+            self.text = torch.zeros(len(self.texts), len(self.texts[0]), dtype=torch.long)
+            j = 0
+            for txt in self.texts:
+                self.text[j] = txt
+                j += 1
+
+            self.img = self.img.cuda(non_blocking=True)
+            self.text = self.text.cuda(non_blocking=True)
+

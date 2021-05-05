@@ -24,8 +24,8 @@ def to_device(data, device):
 
 def get_annotation(split):
 	# use your own dir
-	data_dir = "D:/code/Document-reconstruction/im2latex/dataset/" + split
-	annotation_path = "D:/code/Document-reconstruction/im2latex/dataset/annotations_" + split + ".json"
+	data_dir = "/home/hhhfccz/im2latex/dataset/" + split
+	annotation_path = "/home/hhfccz/im2latex/dataset/annotations_" + split + ".json"
 
 	with open(annotation_path, "r", encoding="ISO-8859-1") as annotation_file:
 		annotations = json.load(annotation_file)

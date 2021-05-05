@@ -43,7 +43,7 @@ class BidirectionalLSTM(nn.Module):
 
 class encoderV1(nn.Module):
     '''
-        CNN+BiLSTM做特征提取
+        resnet and lstm
     '''
 
     def __init__(self, imgH, nc, nh):
@@ -103,7 +103,7 @@ class encoderV1(nn.Module):
 
 class DecoderRNN(nn.Module):
     """
-        采用RNN进行解码
+        rnn decoder
     """
 
     def __init__(self, hidden_size, output_size):
@@ -130,7 +130,7 @@ class DecoderRNN(nn.Module):
 
 class Attentiondecoder(nn.Module):
     """
-        采用attention注意力机制，进行解码
+        attention decoder
     """
 
     def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=71):
@@ -150,19 +150,18 @@ class Attentiondecoder(nn.Module):
     def forward(self, input, hidden, encoder_outputs):
         # calculate the attention weight and weight * encoder_output feature
         embedded = self.embedding(input)
-        # 前一次的输出进行词嵌入
+        # embedding
         embedded = self.dropout(embedded)
 
         attn_weights = F.softmax(
             self.attn(torch.cat((embedded, hidden[0]), 1)), dim=1
         )
-        # 上一次的输出和隐藏状态求出权重, 主要使用一个linear layer从512维到71维，所以只能处理固定宽度的序列
+        # seq of the same length
         attn_applied = torch.matmul(attn_weights.unsqueeze(1),
                                     encoder_outputs.permute((1, 0, 2))
                                     )
-        # 矩阵乘法，bmm（8×1×56，8×56×256）=8×1×256
         output = torch.cat((embedded, attn_applied.squeeze(1)), 1)
-        # 上一次的输出和attention feature做一个融合，再加一个linear layer
+        # cat the embedding and attention feature, then linear layer
         output = self.attn_combine(output).unsqueeze(0)
 
         output = F.relu(output)
@@ -180,9 +179,6 @@ class Attentiondecoder(nn.Module):
 
 
 class AttentiondecoderV2(nn.Module):
-    """
-        采用seq to seq模型，修改注意力权重的计算方式
-    """
 
     def __init__(self, hidden_size, output_size, dropout_p=0.1, batch_size=4):
         super(AttentiondecoderV2, self).__init__()
@@ -197,7 +193,6 @@ class AttentiondecoderV2(nn.Module):
         self.gru = nn.GRU(self.hidden_size, self.hidden_size)
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
-        # test
         self.vat = nn.Linear(hidden_size, 1)
 
     def forward(self, input_embed, hidden, encoder_outputs):
