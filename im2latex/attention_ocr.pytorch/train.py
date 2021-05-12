@@ -2,36 +2,20 @@ import os
 import sys
 import time
 import json
-import argparse
+import warnings
 
 import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from torch.utils.data import dataloader
 
+from config import get_options
+from dataset import Im2latexDataset, AlignCollate, DataPrefetcher, ResizeNormalize
+from model_ocr import EncoderCRNN, Decoder
 from utils import *
-from dataset import *
-from model_ocr import *
 
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-
-def enlarge_decoder_output(x, max_enlargement=5):
-    """
-    use the derivative in tanh
-    """
-    x /= 1e3
-    return (max_enlargement - 1) * (1 - pow((1 - np.exp(-2 * x)) / (1 + np.exp(-2 * x)), 2)) + 1
-
-
-def get_decoder_input(texts, i):
-    decoder_input = []
-    for text in texts:
-        decoder_input.append(text[i])
-    decoder_input = torch.from_numpy(np.array(decoder_input))
-    return decoder_input
 
 
 def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, times, epoch,
@@ -43,47 +27,50 @@ def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_opti
     else:
         encoder.cuda()
         decoder.cuda()
-        criterion = criterion.cuda()
-        decoder_input = text[:, 0]
+        criterion.cuda()
+        decoder_input = text[:, 0].cuda()
         decoder_hidden = decoder.initHidden(opt.batchSize).cuda()
         encoder_output = encoder(img).cuda()
 
     loss = 0.0
-    for i in range(1, len(text[0])):
-        decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
 
-        if opt.cuda:
-            decoder_input = text[:, i]
-        else:
+    for i in range(1, len(text[0])):
+        # print(decoder_input.shape, decoder_hidden.shape, encoder_output.shape)
+        decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
+        # print(decoder_output.shape, decoder_input.shape, i)
+        if not opt.cuda:
             decoder_input = get_decoder_input(text, i)
+        else:
+            decoder_input = text[:, i].cuda()
 
         if not epoch:
             decoder_outputs = decoder_output * enlarge_decoder_output(times)
+            # print(decoder_outputs.shape, decoder_input.shape)
             # !!! don't use *= , will make torch confused !!!
-            loss += criterion(decoder_outputs, decoder_input)
+            loss += criterion(decoder_outputs, decoder_input) / opt.batchSize
         else:
-            loss += criterion(decoder_output, decoder_input)
+            loss += criterion(decoder_output, decoder_input) / opt.batchSize
 
-    encoder.zero_grad()
-    decoder.zero_grad()
-    loss.backward()
-    encoder_optimizer.step()
-    decoder_optimizer.step()
+    if (times + 1) % 5 == 0:
+        encoder.zero_grad()
+        decoder.zero_grad()
+        loss.backward()
+        encoder_optimizer.step()
+        decoder_optimizer.step()
 
-    return loss
+    return loss.item()
 
 
-def valid(opt, encoder, decoder, data_loader, max_iter=10, loss_val_avg=Averager(), criterion=torch.nn.NLLLoss(),
+def valid(opt, encoder, decoder, data_loader, max_iter=10, criterion=torch.nn.NLLLoss(),
           batch_size=16, get_loss=True, test_all=False):
-    num_correct = 0
-    num_total = 0
     test_iter = iter(data_loader)
+
     if not test_all:
         max_iter = min(max_iter, len(data_loader))
     else:
         max_iter = len(data_loader)
 
-    if opt.cuda and not test_all:
+    if opt.cuda:
         encoder.cuda()
         decoder.cuda()
         criterion = criterion.cuda()
@@ -96,6 +83,7 @@ def valid(opt, encoder, decoder, data_loader, max_iter=10, loss_val_avg=Averager
     decoder.eval()
 
     loss_val = 0.0
+    acc_val = 0.0
     for i in range(1, max_iter + 1):
         data = test_iter.__next__()
         img, text = data
@@ -117,119 +105,102 @@ def valid(opt, encoder, decoder, data_loader, max_iter=10, loss_val_avg=Averager
             decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
 
             loss_val += criterion(decoder_output, decoder_input)
-            loss_val_avg.add(loss_val)
+            # [batch_size, n_class]
 
-            topv, topi = decoder_output.data.topk(1)
-            decoder_input = topi.squeeze(1)
-            decoded_labels[l] = decoder_input
+            # don't work, but i don't know why
+            # topv, topi = decoder_output.topk(1)
+            # decoder_input = topi.squeeze(1)
+            # decoded_labels[l, :] = decoder_input
 
-        # TODO: so slow
-        for k in range(length):
-            for pred, target in zip(decoded_labels[k].cpu(), text[:, k]):
-                if int(target) == 2 and int(pred) == 2:
-                    continue
-                elif int(target) != 1:
-                    num_total += 1
-                    if int(pred) == int(target):
-                        num_correct += 1
-                else:
-                    break
+            # TODO: Too slow, but it works
+            for p in range(batch_size):
+                decoder_output_ = decoder_output[p, :].view(1, -1)
+                topv, topi = decoder_output_.topk(1)
+                decoder_input_ = topi.squeeze(1)
+                decoded_labels[l, p] = decoder_input_
+                decoder_input[p] = decoder_input_
+
+        decoded_labels_ = decoded_labels.cpu().numpy()
+        text_ = text.cpu().numpy()
+        # print(decoded_labels_, text_)
+        acc_val += get_acc(length, decoded_labels_, text_)
+
+        if opt.cuda:
+            decoder_input = decoder_input.cuda()
 
     if not get_loss:
-        return num_correct / float(num_total)
+        return acc_val / max_iter
     else:
-        return num_correct / float(num_total), loss_val_avg
+        return acc_val / max_iter, loss_val.item()
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers, you had better put it '
-                                                               '4 times of your gpu')
-    parser.add_argument('--batchSize', type=int, default=32, help='input batch size, default=32')
-    parser.add_argument('--imgH', type=int, default=32, help='the height of the input image to network, default=32')
-    parser.add_argument('--imgW', type=int, default=280, help='the width of the input image to network, default=280')
-    parser.add_argument('--nh', type=int, default=256, help='size of the lstm hidden state, default=256')
-    parser.add_argument('--niter', type=int, default=10, help='number of epochs to train for, default=10')
-    parser.add_argument('--lr', type=float, default=5e-3, help='select the max learning rate, default=5e-3')
-    parser.add_argument('--beta1', type=float, default=0.9, help='beta1 for adam. default=0.9')
-    parser.add_argument('--experiment',
-                        default='/home/hhhfccz/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
-                        help='where to store samples and models')
-    parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
-    parser.add_argument('--saveInterval', type=int, default=2, help='Interval to be displayed')
-    parser.add_argument('--keep_ratio', action='store_true', help='whether to keep ratio for image resize')
-    parser.add_argument('--random_sample', default=True, action='store_true',
-                        help='whether to sample the dataset with random sampler')
-    parser.add_argument('--adam', default=True, action='store_true', help='whether to use adam')
-    parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
-    parser.add_argument('--preload', action='store_true', default=False, help='enables preload')
-    parser.add_argument('--continue_train', action='store_true', default=False, help="whether to continue training")
-    opt = parser.parse_args()
+    opt = get_options()
+    print("-----init-----")
 
-    print("------init------")
     manual_seed = 118
-    random.seed(manual_seed)
     torch.manual_seed(manual_seed)
-    nclass = len(get_chars("train")) + 3
+
     nc = 1
+    already_epoch = 0
 
     if opt.cuda:
+        import torch.backends.cudnn as cudnn
         cudnn.enabled = True
         cudnn.benchmark = True
 
     CUDA_AVAILABLE = torch.cuda.is_available()
     if CUDA_AVAILABLE and not opt.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+        warnings.warn("WARNING: You have a CUDA device, so you should probably run with --cuda")
     if not CUDA_AVAILABLE and opt.cuda:
-        assert torch.cuda.is_available() == True, "ERROR: You don't have a CUDA device"
+        assert torch.cuda.is_available(), "ERROR: You don't have a CUDA device"
     if not opt.cuda and opt.preload:
-        assert (opt.preload == True and not CUDA_AVAILABLE), "ERROR: You don't have a CUDA device"
+        assert (opt.preload and not CUDA_AVAILABLE), "ERROR: You don't have a CUDA device"
     if opt.cuda and not opt.preload:
-        print("WARNING: You choosed the CUDA, so you could run with --preload")
+        warnings.warn("WARNING: You choosed the CUDA, so you could run with --preload")
 
     # train dataset init
-    train_dataset = Im2latex_Dataset(split="train", transform=None)
-    print("the correspondence between tex chars and numbers: \n",
-          json.dumps(train_dataset.chars2num, indent=4, sort_keys=True))
+    train_dataset = Im2latexDataset(split="train", transform=None)
+    n_class = train_dataset.nclass + 3
+    # print(n_class)
 
     assert train_dataset
-    if opt.random_sample:
-        sampler = RandomSequentialSampler(train_dataset, opt.batchSize)
-    else:
-        sampler = None
 
     train_loader = dataloader.DataLoader(
         train_dataset, batch_size=opt.batchSize,
-        shuffle=True, sampler=sampler,
-        num_workers=int(opt.workers),
+        shuffle=True, num_workers=int(opt.workers),
         collate_fn=AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio),
         pin_memory=True
     )
     length = len(train_loader)
 
     # test dataset init
-    test_dataset = Im2latex_Dataset(split="test", transform=ResizeNormalize(opt.imgH, opt.imgW))
-    # TODO: you can modified it 
+    test_dataset = Im2latexDataset(split="test", transform=ResizeNormalize(opt.imgH, opt.imgW))
+
+    assert test_dataset
+    # MODIFIED: you can modified it 
     test_batch_size = 16
     test_loader = dataloader.DataLoader(
         test_dataset, batch_size=test_batch_size,
-        shuffle=True, num_workers=int(opt.workers),
-        pin_memory=True
-    )
-
-    # test dataset init
-    valid_dataset = Im2latex_Dataset(split="validate", transform=ResizeNormalize(opt.imgH, opt.imgW))
-    # TODO: you can modified it 
-    valid_batch_size = 16
-    valid_loader = dataloader.DataLoader(
-        valid_dataset, batch_size=valid_batch_size,
         shuffle=False, num_workers=int(opt.workers),
         pin_memory=True
     )
 
+    # # valid dataset init
+    # valid_dataset = Im2latex_Dataset(split="validate", transform=ResizeNormalize(opt.imgH, opt.imgW))
+
+    # assert valid_dataset
+    # # MODIFIED: you can modified it 
+    # valid_batch_size = 16
+    # valid_loader = dataloader.DataLoader(
+    #     valid_dataset, batch_size=valid_batch_size,
+    #     shuffle=False, num_workers=int(opt.workers),
+    #     pin_memory=True
+    # )
+
     # network init
-    encoder = encoderV1(opt.imgH, nc, opt.nh)
-    decoder = decoderV2(opt.nh, nclass, dropout_p=0.3, batch_size=opt.batchSize)
+    encoder = EncoderCRNN(opt.imgH, nc, opt.nh)
+    decoder = Decoder(opt.nh, n_class, dropout_p=0.3, batch_size=opt.batchSize)
     # setup optimizer
     if opt.adam:
         encoder_optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr, eps=1e-7, weight_decay=0.01)
@@ -238,32 +209,20 @@ def main():
     else:
         encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=opt.lr)
         decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=opt.lr)
-    if opt.continue_train:
-        # continue training or use the pretrained model to initial the parameters of the encoder and decoder
-        encoder_path = input('please enter your pretrained encoder_model path: ')
-        print('loading pretrained encoder model from %s' % encoder_path)
-        checkpoint_encoder = torch.load(encoder_path)
-        encoder.load_state_dict(checkpoint_encoder['model'])
-        encoder_optimizer.load_state_dict(checkpoint_encoder['optimizer'])
 
-        decoder_path = input('please enter your pretrained decoder_model path: ')
-        print('loading pretrained decoder model from %s' % decoder_path)
-        checkpoint_decoder = torch.load(decoder_path)
-        decoder.load_state_dict(checkpoint_decoder['model'])
-        decoder_optimizer.load_state_dict(checkpoint_decoder['optimizer'])
-    else:
-        # For prediction of an indefinite long sequence
-        encoder.apply(weights_init)
-        decoder.apply(weights_init)
+    encoder_scheduler = torch.optim.lr_scheduler.OneCycleLR(encoder_optimizer, max_lr=opt.lr/3, epochs=opt.niter,
+                                                            steps_per_epoch=length, cycle_momentum=False)
+    decoder_scheduler = torch.optim.lr_scheduler.OneCycleLR(decoder_optimizer, max_lr=opt.lr/3, epochs=opt.niter,
+                                                            steps_per_epoch=length, cycle_momentum=False)
+
+    encoder.apply(weights_init)
+    decoder.apply(weights_init)
 
     print(encoder)
     print(decoder)
 
     # choose loss
-    criterion = torch.nn.CrossEntropyLoss()
-
-    # loss averager
-    loss_avg = Averager()
+    criterion = torch.nn.NLLLoss(ignore_index=2)
 
     # train
     print("-----train-----")
@@ -287,8 +246,9 @@ def main():
             decoder.train()
 
             loss = trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, i, epoch,
-                              criterion=criterion)
-            loss_avg.add(loss)
+                              encoder_scheduler)
+            encoder_scheduler.step()
+            decoder_scheduler.step()
             i += 1
 
             if opt.preload:
@@ -299,37 +259,33 @@ def main():
 
             if i % opt.displayInterval == 0:
                 # do val
-                acc, loss_test_avg = valid(opt, encoder, decoder, batch_size=test_batch_size, data_loader=test_loader,
-                                           criterion=criterion)
+                acc, loss_test = valid(opt, encoder, decoder, batch_size=test_batch_size, data_loader=test_loader,
+                                       criterion=criterion)
                 print('[%d/%d][%d/%d] TrainLoss: %f TestLoss: %f Acc: %f' % (
-                    epoch, opt.niter, i, length, loss_avg.val(), loss_test_avg.val(), acc), end=' ')
+                    epoch + already_epoch, opt.niter, i, length, loss, loss_test, acc), end=' ')
                 t1 = time.time()
                 print('Time: %s' % str(t1 - t0))
                 t0 = time.time()
-                loss_avg.reset()
-                loss_test_avg.reset()
 
         print('-----Model saved-----')
         if epoch % opt.saveInterval == 0:
             # do saving
-            encoder_model = {'model': encoder.state_dict(), 'optimizer': encoder_optimizer.state_dict()}
+            encoder_model = {'model': encoder.state_dict(), 'optimizer': encoder_optimizer.state_dict(), 'epoch': epoch}
             torch.save(
-                encoder.state_dict(), '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+                encoder_model, '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
             )
-            decoder_model = {'model': decoder.state_dict(), 'optimizer': decoder_optimizer.state_dict()}
+            decoder_model = {'model': decoder.state_dict(), 'optimizer': decoder_optimizer.state_dict(), 'epoch': epoch}
             torch.save(
-                decoder.state_dict(), '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+                decoder_model, '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
             )
 
         if opt.cuda:
             torch.cuda.empty_cache()
 
-        # val all
-        acc_val, loss_val_avg = valid(opt, encoder, decoder, batch_size=valid_batch_size, data_loader=valid_loader,
-                                      criterion=criterion, test_all=True)
-        print('Time: ', time.strftime('%Y-%m-%d %H:%M:%S'), 'Acc: %f, Loss: %f' % (acc_val, loss_val_avg.val()),
-              'It\'s time to save one model')
-        loss_val_avg.reset()
+        # # val all
+        # acc_val, loss_val_avg = valid(opt, encoder, decoder, batch_size=valid_batch_size,
+        # data_loader=valid_loader, test_all=True) print('Time: ', time.strftime('%Y-%m-%d %H:%M:%S'), 'Acc: %f,
+        # Loss: %f' % (acc_val, loss_val_avg.val()), 'It\'s time to save one model') loss_val_avg.reset()
 
 
 if __name__ == '__main__':

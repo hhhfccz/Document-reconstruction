@@ -1,33 +1,28 @@
-import os
-import json
-
-import cv2
-
-import torch
-from torch.utils.data import dataloader, Dataset
-import torchvision.transforms as transforms
-from torchvision.datasets import ImageFolder
+import argparse
 
 
-def get_device():
-	if torch.cuda.is_available():
-		return torch.device("cuda")
-	else:
-		return torch.device("cpu")
+def get_options():
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--workers', type=int, default=4, help='number of data loading workers, you had better put it '
+                                                               '4 times of your gpu')
+    parser.add_argument('--batchSize', type=int, default=32, help='input batch size, default=32')
+    parser.add_argument('--imgH', type=int, default=32, help='the height of the input image to network, default=32')
+    parser.add_argument('--imgW', type=int, default=280, help='the width of the input image to network, default=280')
+    parser.add_argument('--nh', type=int, default=256, help='size of the lstm hidden state, default=256')
+    parser.add_argument('--niter', type=int, default=10, help='number of epochs to train for, default=10')
+    parser.add_argument('--lr', type=float, default=1-2, help='select the max learning rate, default=1e-2')
+    parser.add_argument('--beta1', type=float, default=0.9, help='beta1 for adam. default=0.9')
+    parser.add_argument('--experiment',
+                        default='/home/hhhfccz/im2latex/attention_ocr.pytorch/expr/attention_ocr/',
+                        help='where to store samples and models')
+    parser.add_argument('--displayInterval', type=int, default=10, help='Interval to be displayed')
+    parser.add_argument('--saveInterval', type=int, default=2, help='Interval to be displayed')
+    parser.add_argument('--keep_ratio', action='store_true', help='whether to keep ratio for image resize')
+    parser.add_argument('--adam', default=True, action='store_true', help='whether to use adam')
+    parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
+    parser.add_argument('--preload', action='store_true', default=False, help='enables preload')
+    parser.add_argument('--continue_train', action='store_true', default=False, help="whether to continue training")
+    opt = parser.parse_args()
 
-def to_device(data, device):
-	if isinstance(data, (list, tuple)):
-		return [to_device(x, device) for x in data]
-	return data.to(device, non_blocking=True)
-
-
-def get_annotation(split):
-	# use your own dir
-	data_dir = "/home/hhhfccz/im2latex/dataset/" + split
-	annotation_path = "/home/hhfccz/im2latex/dataset/annotations_" + split + ".json"
-
-	with open(annotation_path, "r", encoding="ISO-8859-1") as annotation_file:
-		annotations = json.load(annotation_file)
-
-	return annotations, data_dir
+    return opt

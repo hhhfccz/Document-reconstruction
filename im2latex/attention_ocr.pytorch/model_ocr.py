@@ -2,20 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.nn.utils import weight_norm
 from torch.nn.parameter import Parameter
 
 from utils import weights_init
 
 
-def accuracy(outputs, labels):
-    _, preds = torch.max(outputs, dim=1)
-    return torch.tensor(torch.sum(preds == labels).item() / len(preds))
-
-
-def ConvBlock(in_channels, out_channels, pool=False):
+def ConvBlock(in_channels, out_channels, relu=True, pool=False):
     layers = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-              nn.BatchNorm2d(out_channels),
-              nn.LeakyReLU(inplace=True)]
+              nn.BatchNorm2d(out_channels)]
+    if relu:
+        layers.append(nn.LeakyReLU(inplace=True))
     if pool:
         layers.append(nn.MaxPool2d(2, 2))
     return nn.Sequential(*layers)
@@ -41,26 +38,91 @@ class BidirectionalLSTM(nn.Module):
         return output
 
 
-class encoderV1(nn.Module):
-    '''
-        resnet and lstm
-    '''
+class Chomp1d(nn.Module):
 
+    def __init__(self, chomp_size):
+        super(Chomp1d, self).__init__()
+        self.chomp_size = chomp_size
+
+    def forward(self, x):
+        return x[:, :, :-self.chomp_size].contiguous()
+
+
+class TemporalBlock(nn.Module):
+
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.1):
+        super(TemporalBlock, self).__init__()
+        self.conv1 = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation))
+        self.chomp1 = Chomp1d(padding)
+        self.relu1 = nn.LeakyReLU(inplace=True)
+        self.dropout = nn.Dropout(dropout)
+
+        self.conv2 = weight_norm(nn.Conv1d(n_outputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation))
+        self.chomp2 = Chomp1d(padding)
+        self.relu2 = nn.LeakyReLU(inplace=True)
+
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout,
+                                 self.conv2, self.chomp2, self.relu2, self.dropout)
+        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        self.relu = nn.ReLU()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
+        if self.downsample is not None:
+            self.downsample.weight.data.normal_(0, 0.01)
+
+    def forward(self, x):
+        out = self.net(x)
+        res = x if self.downsample is None else self.downsample(x)
+        return self.relu(out + res)
+
+
+class TemporalConvNet(nn.Module):
+
+    def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
+        super(TemporalConvNet, self).__init__()
+        layers = []
+        num_levels = len(num_channels)
+        for i in range(num_levels):
+            dilation_size = 2 ** i
+            in_channels = num_inputs if i == 0 else num_channels[i-1]
+            out_channels = num_channels[i]
+            layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
+                                     padding=(kernel_size-1) * dilation_size, dropout=dropout)]
+
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+
+
+class EncoderTCN(object):
+    """docstring for EncoderTCN"""
+    def __init__(self, arg):
+        super(EncoderTCN, self).__init__()
+        self.tcn = TemporalConvNet(input_size, num_channels, kernel_size, dropout=0.3)
+        
+
+
+class EncoderCRNN(nn.Module):
+    """resnet and lstm, crnn"""
+    __slots__ = ["conv1", "conv2", "conv3", "conv4", "conv5", "conv6", "res1", "res2", "res3", "rnn"]
     def __init__(self, imgH, nc, nh):
-        super(encoderV1, self).__init__()
+        super(EncoderCRNN, self).__init__()
         assert imgH % 16 == 0, 'imgH has to be a multiple of 16'
 
         self.conv1 = ConvBlock(nc, 64)
         self.conv2 = ConvBlock(64, 128, pool=True)
-        self.res1 = nn.Sequential(ConvBlock(128, 128), ConvBlock(128, 128))
+        self.res1 = nn.Sequential(ConvBlock(128, 128, relu=False), ConvBlock(128, 128))
 
         self.conv3 = ConvBlock(128, 256, pool=True)
         self.conv4 = ConvBlock(256, 256, pool=True)
-        self.res2 = nn.Sequential(ConvBlock(256, 256), ConvBlock(256, 256))
+        self.res2 = nn.Sequential(ConvBlock(256, 256, relu=False), ConvBlock(256, 256))
 
         self.conv5 = ConvBlock(256, 512, pool=True)
         self.conv6 = ConvBlock(512, 512, pool=True)
-        self.res3 = nn.Sequential(ConvBlock(512, 512), ConvBlock(512, 512))
+        self.res3 = nn.Sequential(ConvBlock(512, 512, relu=False), ConvBlock(512, 512))
 
         self.rnn = nn.Sequential(
             BidirectionalLSTM(512, nh, nh),
@@ -69,6 +131,7 @@ class encoderV1(nn.Module):
 
     def forward(self, xb):
         # conv features
+        # print(xb)
         out = self.conv1(xb)
         # print(out.shape)
         out = self.conv2(out)
@@ -101,106 +164,25 @@ class encoderV1(nn.Module):
         return encoder_outputs
 
 
-class DecoderRNN(nn.Module):
-    """
-        rnn decoder
-    """
-
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
+class DecoderAttention(nn.Module):
+    __slots__ = ["hidden_size", "dropout", "embedding", "attn_combine", "gru", "out", "vat"]
+    def __init__(self, hidden_size, output_size, dropout_p=0.1):
+        super(DecoderAttention, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
-
-    def initHidden(self):
-        result = Variable(torch.zeros(1, 1, self.hidden_size))
-
-        return result
-
-
-class Attentiondecoder(nn.Module):
-    """
-        attention decoder
-    """
-
-    def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=71):
-        super(Attentiondecoder, self).__init__()
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.dropout_p = dropout_p
-        self.max_length = max_length
-
-        self.embedding = nn.Embedding(self.output_size, self.hidden_size)
-        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.embedding = nn.Embedding(output_size, self.hidden_size)
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        self.dropout = nn.Dropout(self.dropout_p)
+        self.dropout = nn.Dropout(dropout_p)
         self.gru = nn.GRU(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.output_size)
-
-    def forward(self, input, hidden, encoder_outputs):
-        # calculate the attention weight and weight * encoder_output feature
-        embedded = self.embedding(input)
-        # embedding
-        embedded = self.dropout(embedded)
-
-        attn_weights = F.softmax(
-            self.attn(torch.cat((embedded, hidden[0]), 1)), dim=1
-        )
-        # seq of the same length
-        attn_applied = torch.matmul(attn_weights.unsqueeze(1),
-                                    encoder_outputs.permute((1, 0, 2))
-                                    )
-        output = torch.cat((embedded, attn_applied.squeeze(1)), 1)
-        # cat the embedding and attention feature, then linear layer
-        output = self.attn_combine(output).unsqueeze(0)
-
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        # just as sequence to sequence decoder
-
-        output = F.log_softmax(self.out(output[0]), dim=1)
-        # use log_softmax for nllloss
-        return output, hidden, attn_weights
-
-    def initHidden(self, batch_size):
-        result = Variable(torch.zeros(1, batch_size, self.hidden_size))
-
-        return result
-
-
-class AttentiondecoderV2(nn.Module):
-
-    def __init__(self, hidden_size, output_size, dropout_p=0.1, batch_size=4):
-        super(AttentiondecoderV2, self).__init__()
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.dropout_p = dropout_p
-        self.batch_size = batch_size
-
-        self.embedding = nn.Embedding(self.output_size, self.hidden_size)
-        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        self.dropout = nn.Dropout(self.dropout_p)
-        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.out = nn.Linear(self.hidden_size, output_size)
 
         self.vat = nn.Linear(hidden_size, 1)
 
     def forward(self, input_embed, hidden, encoder_outputs):
-        embedded = self.embedding(input_embed)
+        embedded = self.embedding(input_embed.long())
         embedded = self.dropout(embedded)
         # print(embedded.shape, hidden.shape)
 
-        # test
         batch_size = encoder_outputs.shape[1]
         # print(batch_size)
         # print(hidden.shape, encoder_outputs.shape)
@@ -233,40 +215,21 @@ class AttentiondecoderV2(nn.Module):
         # print(output.shape)
         return output, hidden, attn_weights
 
-    def initHidden(self):
-        result = Variable(torch.zeros(1, self.batch_size, self.hidden_size))
+    def initHidden(self, batch_size):
+        # don't use self.batch_size, see train.val()
+        result = Variable(torch.zeros(1, batch_size, self.hidden_size))
         return result
 
 
-class decoder(nn.Module):
+class Decoder(nn.Module):
     """
         decoder from image features
     """
-
-    def __init__(self, nh=256, nclass=13, dropout_p=0.1, max_length=71, batch_size=4):
-        super(decoder, self).__init__()
-        self.hidden_size = nh
-        self.batch_size = batch_size
-        self.decoder = Attentiondecoder(nh, nclass, dropout_p, max_length)
-
-    def forward(self, input, hidden, encoder_outputs):
-        return self.decoder(input, hidden, encoder_outputs)
-
-    def initHidden(self):
-        result = Variable(torch.zeros(1, self.batch_size, self.hidden_size))
-        return result
-
-
-class decoderV2(nn.Module):
-    """
-        decoder from image features
-    """
-
+    __slots__ = ["hidden_size", "decoder"]
     def __init__(self, nh=256, nclass=13, dropout_p=0.1, batch_size=4):
-        super(decoderV2, self).__init__()
+        super(Decoder, self).__init__()
         self.hidden_size = nh
-        self.batch_size = batch_size
-        self.decoder = AttentiondecoderV2(nh, nclass, dropout_p, batch_size)
+        self.decoder = DecoderAttention(nh, nclass, dropout_p)
 
     def forward(self, input, hidden, encoder_outputs):
         return self.decoder(input, hidden, encoder_outputs)
@@ -277,8 +240,8 @@ class decoderV2(nn.Module):
 
 
 if __name__ == '__main__':
-    encoder = encoderV1(imgH=32, nc=10, nh=256)
-    decoder = decoderV2(nh=256, nclass=100, dropout_p=0.1)
+    encoder = EncoderCRNN(imgH=32, nc=10, nh=256)
+    decoder = Decoder(nh=256, nclass=100, dropout_p=0.1)
 
     encoder.apply(weights_init)
     decoder.apply(weights_init)

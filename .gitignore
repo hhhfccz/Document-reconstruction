@@ -1,4 +1,8 @@
 /.idea/
 /__pycache__/
 /im2latex/__pycache__/
-/im2latex/dataset/dataset.zip
+/im2latex/dataset/
+/im2latex/attention_ocr.pytorch/encode-decodetrain.json
+/im2latex/attention_ocr.pytorch/encode-decode.json
+/im2latex/attention_ocr.pytorch/num_chars_nametuple.json
+/im2latex/attention_ocr.pytorch/expr/

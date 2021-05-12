@@ -1,4 +1,3 @@
-import six
 import sys
 import cv2
 import numpy as np
@@ -9,22 +8,23 @@ from torch.utils.data import Dataset
 from torch.utils.data import sampler
 import torchvision.transforms as transforms
 
-from utils import *
+from utils import get_data, get_annotation
 
 
-class Im2latex_Dataset(Dataset):
+class Im2latexDataset(Dataset):
+    __slots__ = ["transform", "annotations", "length", "labels", "nclass"]
 
     def __init__(self, split, transform=None):
-        self.split = split
         self.transform = transform
 
-        annotations, _ = get_annotation(split)
-        self.annotations = annotations
-        self.length = len(annotations)
+        self.annotations = get_annotation(split)
+        self.length = len(self.annotations)
 
-        labels, chars2num = get_data(split)
-        self.labels = labels
-        self.chars2num = chars2num
+        if split == "train":
+            self.labels, chars = get_data(split, self.annotations)
+            self.nclass = len(chars)
+        else:
+            self.labels = get_data(split, self.annotations)
 
     def __len__(self):
         return self.length
@@ -154,4 +154,3 @@ class DataPrefetcher:
 
             self.img = self.img.cuda(non_blocking=True)
             self.text = self.text.cuda(non_blocking=True)
-
