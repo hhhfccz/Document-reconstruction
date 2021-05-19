@@ -4,14 +4,16 @@
 
 After downloading the dataset of im2latex, you should unzip it in `/dataset/`
 
-link：https://pan.baidu.com/s/1volnYe6zMGYDz_iWuMc3VA 
-pwd：gje5 
 
 ## requirements.txt
 
 > torch 1.6.0
 > 
 > opencv-python
+> 
+> numba
+> 
+> nltk
 
 ## How to use
 
@@ -24,18 +26,22 @@ pwd：gje5
 in `/dataset/data_match.py` line 25: 
 
 ```python
-split_road = "/home/hhhfccz/im2latex/dataset/" + split + "/"
+split_road = "/home/hhhfccz/im2latex/dataset/im2latex-100k/" + split + "/"
 ```
 
-should be modified by your own dataset_path
+should be modified by your own dataset path
 
 then, run `python data_match.py`
 
 ### run train.py
 
-in `/attention_ocr.pytorch/config.py` line 27 and line 28
+in `/attention_ocr.pytorch/utils.py` line 30
 
-should be modified by your own annotations.json path
+```python
+dataset_path = "/home/hhhfccz/im2latex/dataset/im2latex-100k/"
+```
+
+should be modified by your own dataset path
 
 then, run `python train.py`
 

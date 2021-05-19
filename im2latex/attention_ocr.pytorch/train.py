@@ -1,13 +1,15 @@
-import os
+# ——*——coding:utf-8——*——
+# author: hhhfccz(胡珈魁) time:2021/3/18
 import sys
 import time
-import json
+import random
 import warnings
 
-import numpy as np
-import torch
+import cv2
 import torch.optim as optim
 from torch.utils.data import dataloader
+from torchsummary import summary
+from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu
 
 from config import get_options
 from dataset import Im2latexDataset, AlignCollate, DataPrefetcher, ResizeNormalize
@@ -18,51 +20,49 @@ from utils import *
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, times, epoch,
+def trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer,
                criterion=torch.nn.NLLLoss()):
     if not opt.cuda:
         decoder_input = get_decoder_input(text, 0)
-        decoder_hidden = decoder.initHidden(opt.batchSize)
+        decoder_hidden = decoder.initHidden(opt.batch_size)
         encoder_output = encoder(img)
     else:
-        encoder.cuda()
-        decoder.cuda()
-        criterion.cuda()
-        decoder_input = text[:, 0].cuda()
-        decoder_hidden = decoder.initHidden(opt.batchSize).cuda()
-        encoder_output = encoder(img).cuda()
+        decoder_input = text[:, 0].cuda(non_blocking=True)
+        decoder_hidden = decoder.initHidden(opt.batch_size).cuda(non_blocking=True)
+        encoder_output = encoder(img).cuda(non_blocking=True)
 
     loss = 0.0
+    length = len(text[0])
 
-    for i in range(1, len(text[0])):
+    for i in range(1, length):
         # print(decoder_input.shape, decoder_hidden.shape, encoder_output.shape)
         decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
         # print(decoder_output.shape, decoder_input.shape, i)
         if not opt.cuda:
             decoder_input = get_decoder_input(text, i)
         else:
-            decoder_input = text[:, i].cuda()
+            decoder_input = text[:, i].cuda(non_blocking=True)
 
-        if not epoch:
-            decoder_outputs = decoder_output * enlarge_decoder_output(times)
-            # print(decoder_outputs.shape, decoder_input.shape)
-            # !!! don't use *= , will make torch confused !!!
-            loss += criterion(decoder_outputs, decoder_input) / opt.batchSize
-        else:
-            loss += criterion(decoder_output, decoder_input) / opt.batchSize
+        loss += criterion(decoder_output, decoder_input)
 
-    if (times + 1) % 5 == 0:
-        encoder.zero_grad()
-        decoder.zero_grad()
-        loss.backward()
-        encoder_optimizer.step()
-        decoder_optimizer.step()
+        # print(decoder_input)
+        if (decoder_input == 2).all():
+            break
+    # print(loss)
+
+    # if (times + 1) % opt.niter == 0:
+    encoder_optimizer.zero_grad()
+    decoder_optimizer.zero_grad()
+    loss.backward()
+    encoder_optimizer.step()
+    decoder_optimizer.step()
 
     return loss.item()
 
 
-def valid(opt, encoder, decoder, data_loader, max_iter=10, criterion=torch.nn.NLLLoss(),
-          batch_size=16, get_loss=True, test_all=False):
+@torch.no_grad()
+def valid(opt, encoder, decoder, data_loader, max_iter=1, criterion=torch.nn.NLLLoss(),
+          batch_size=1, test_all=False):
     test_iter = iter(data_loader)
 
     if not test_all:
@@ -70,68 +70,37 @@ def valid(opt, encoder, decoder, data_loader, max_iter=10, criterion=torch.nn.NL
     else:
         max_iter = len(data_loader)
 
-    if opt.cuda:
-        encoder.cuda()
-        decoder.cuda()
-        criterion = criterion.cuda()
-
-    for e, d in zip(encoder.parameters(), decoder.parameters()):
-        e.requires_grad = False
-        d.requires_grad = False
-
     encoder.eval()
     decoder.eval()
 
-    loss_val = 0.0
-    acc_val = 0.0
+    bleu = 0.0
+    chencherry = SmoothingFunction()
     for i in range(1, max_iter + 1):
         data = test_iter.__next__()
         img, text = data
+
         length = len(text[0])
-        decoded_labels = torch.zeros((length, batch_size))
-
-        if not opt.cuda:
-            decoder_input = get_decoder_input(text, 0)
-            decoder_hidden = decoder.initHidden(batch_size)
-            encoder_output = encoder(img)
-        else:
-            img = img.cuda()
-            decoder_input = get_decoder_input(text, 0).cuda()
-            decoder_hidden = decoder.initHidden(batch_size).cuda()
-            encoder_output = encoder(img).cuda()
-            decoded_labels = decoded_labels.cuda()
-
-        for l in range(1, length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
-
-            loss_val += criterion(decoder_output, decoder_input)
-            # [batch_size, n_class]
-
-            # don't work, but i don't know why
-            # topv, topi = decoder_output.topk(1)
-            # decoder_input = topi.squeeze(1)
-            # decoded_labels[l, :] = decoder_input
-
-            # TODO: Too slow, but it works
-            for p in range(batch_size):
-                decoder_output_ = decoder_output[p, :].view(1, -1)
-                topv, topi = decoder_output_.topk(1)
-                decoder_input_ = topi.squeeze(1)
-                decoded_labels[l, p] = decoder_input_
-                decoder_input[p] = decoder_input_
-
-        decoded_labels_ = decoded_labels.cpu().numpy()
-        text_ = text.cpu().numpy()
-        # print(decoded_labels_, text_)
-        acc_val += get_acc(length, decoded_labels_, text_)
+        # print(length)
+        decoded_labels = ["0"]
+        decoder_input = torch.LongTensor(batch_size).fill_(0)
+        decoder_hidden = decoder.initHidden(batch_size)
+        encoder_output = encoder(img)
 
         if opt.cuda:
-            decoder_input = decoder_input.cuda()
+            decoder_input = decoder_input.cuda(non_blocking=True)
+            decoder_hidden = decoder_hidden.cuda(non_blocking=True)
+            encoder_output = encoder_output.cuda(non_blocking=True)
 
-    if not get_loss:
-        return acc_val / max_iter
-    else:
-        return acc_val / max_iter, loss_val.item()
+        for k in range(1, length):
+            decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output)
+            _, topi = decoder_output.topk(1)
+            decoder_input = topi.squeeze(1)
+            decoded_labels.append(str(int(decoder_input)))
+
+        t = str(text[0].tolist())[1:-1].split(", ")
+        # print(t[1:-1], decoded_labels[1:-1])
+        bleu += corpus_bleu(t[1:-1], decoded_labels[1:-1], smoothing_function=chencherry.method1)
+    return bleu / max_iter
 
 
 def main():
@@ -139,6 +108,7 @@ def main():
     print("-----init-----")
 
     manual_seed = 118
+    random.seed(manual_seed)
     torch.manual_seed(manual_seed)
 
     nc = 1
@@ -148,6 +118,7 @@ def main():
         import torch.backends.cudnn as cudnn
         cudnn.enabled = True
         cudnn.benchmark = True
+        cudnn.deterministic = True
 
     CUDA_AVAILABLE = torch.cuda.is_available()
     if CUDA_AVAILABLE and not opt.cuda:
@@ -159,7 +130,7 @@ def main():
     if opt.cuda and not opt.preload:
         warnings.warn("WARNING: You choosed the CUDA, so you could run with --preload")
 
-    # train dataset init
+    # train dataloader init
     train_dataset = Im2latexDataset(split="train", transform=None)
     n_class = train_dataset.nclass + 3
     # print(n_class)
@@ -167,26 +138,27 @@ def main():
     assert train_dataset
 
     train_loader = dataloader.DataLoader(
-        train_dataset, batch_size=opt.batchSize,
+        train_dataset, batch_size=opt.batch_size,
         shuffle=True, num_workers=int(opt.workers),
         collate_fn=AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio),
-        pin_memory=True
+        pin_memory=True, drop_last=True
     )
     length = len(train_loader)
 
-    # test dataset init
+    # test dataloader init
     test_dataset = Im2latexDataset(split="test", transform=ResizeNormalize(opt.imgH, opt.imgW))
 
     assert test_dataset
-    # MODIFIED: you can modified it 
-    test_batch_size = 16
+    # ATTENTION: you can't modified it
+    test_batch_size = 1
     test_loader = dataloader.DataLoader(
-        test_dataset, batch_size=test_batch_size,
-        shuffle=False, num_workers=int(opt.workers),
-        pin_memory=True
+        train_dataset, batch_size=test_batch_size,
+        shuffle=True, num_workers=int(opt.workers),
+        collate_fn=AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio=opt.keep_ratio),
+        pin_memory=True, drop_last=True
     )
 
-    # # valid dataset init
+    # # valid dataloader init
     # valid_dataset = Im2latex_Dataset(split="validate", transform=ResizeNormalize(opt.imgH, opt.imgW))
 
     # assert valid_dataset
@@ -200,29 +172,35 @@ def main():
 
     # network init
     encoder = EncoderCRNN(opt.imgH, nc, opt.nh)
-    decoder = Decoder(opt.nh, n_class, dropout_p=0.3, batch_size=opt.batchSize)
+    decoder = Decoder(opt.nh, n_class, dropout_p=0.5, batch_size=opt.batch_size)
+
     # setup optimizer
     if opt.adam:
-        encoder_optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr, eps=1e-7, weight_decay=0.01)
-        decoder_optimizer = optim.Adam(decoder.parameters(), lr=opt.lr, eps=1e-7, betas=(opt.beta1, 0.999),
-                                       weight_decay=0.01, amsgrad=True)
+        encoder_optimizer = optim.Adadelta(encoder.parameters(), lr=opt.lr, eps=1e-8, weight_decay=1e-3)
+        decoder_optimizer = optim.Adam(decoder.parameters(), lr=opt.lr, eps=1e-8, betas=(opt.beta1, 0.999),
+                                       weight_decay=1e-3)
     else:
         encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=opt.lr)
         decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=opt.lr)
 
-    encoder_scheduler = torch.optim.lr_scheduler.OneCycleLR(encoder_optimizer, max_lr=opt.lr/3, epochs=opt.niter,
-                                                            steps_per_epoch=length, cycle_momentum=False)
-    decoder_scheduler = torch.optim.lr_scheduler.OneCycleLR(decoder_optimizer, max_lr=opt.lr/3, epochs=opt.niter,
-                                                            steps_per_epoch=length, cycle_momentum=False)
+    encoder_scheduler = optim.lr_scheduler.CosineAnnealingLR(encoder_optimizer, T_max=opt.niter)
+    decoder_scheduler = optim.lr_scheduler.CosineAnnealingLR(decoder_optimizer, T_max=opt.niter)
 
     encoder.apply(weights_init)
     decoder.apply(weights_init)
-
-    print(encoder)
-    print(decoder)
+    for e, d in zip(encoder.parameters(), decoder.parameters()):
+        e.requires_grad = True
+        d.requires_grad = True
 
     # choose loss
-    criterion = torch.nn.NLLLoss(ignore_index=2)
+    criterion = torch.nn.NLLLoss()
+
+    if opt.cuda:
+        encoder.cuda()
+        decoder.cuda()
+        criterion.cuda()
+    # summary(encoder, input_size=[(1, opt.imgH, opt.imgW)], batch_size=opt.batch_size, device="cpu")
+    # summary(decoder, input_size=[(opt.batch_size)], batch_size=opt.batch_size, device="cpu")
 
     # train
     print("-----train-----")
@@ -231,56 +209,42 @@ def main():
         i = 0
 
         if opt.preload:
-            prefetcher = DataPrefetcher(train_loader)
-            img, text = prefetcher.__next__()
-        else:
-            train_iter = iter(train_loader)
-            data = train_iter.__next__()
-            img, text = data
+            train_loader = DataPrefetcher(train_loader)
 
-        while i < length - 1:
-            for e, d in zip(encoder.parameters(), decoder.parameters()):
-                e.requires_grad = True
-                d.requires_grad = True
+        for img, text in train_loader:
             encoder.train()
             decoder.train()
 
-            loss = trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer, i, epoch,
-                              encoder_scheduler)
-            encoder_scheduler.step()
-            decoder_scheduler.step()
+            loss = trainBatch(opt, img, text, encoder, decoder, encoder_optimizer, decoder_optimizer,
+                              criterion=criterion)
             i += 1
-
-            if opt.preload:
-                img, text = prefetcher.__next__()
-            else:
-                data = train_iter.__next__()
-                img, text = data
 
             if i % opt.displayInterval == 0:
                 # do val
-                acc, loss_test = valid(opt, encoder, decoder, batch_size=test_batch_size, data_loader=test_loader,
-                                       criterion=criterion)
-                print('[%d/%d][%d/%d] TrainLoss: %f TestLoss: %f Acc: %f' % (
-                    epoch + already_epoch, opt.niter, i, length, loss, loss_test, acc), end=' ')
+                bleu = valid(opt, encoder, decoder, batch_size=test_batch_size, data_loader=test_loader,
+                             criterion=criterion)
+                print('[%d/%d][%d/%d] TrainLoss: %f Bleu Score: %f' % (
+                    epoch + already_epoch, opt.niter, i, length, loss, bleu), end=' ')
                 t1 = time.time()
                 print('Time: %s' % str(t1 - t0))
                 t0 = time.time()
+            # for name, parameters in decoder.state_dict().items():
+            #     if "weight" in name:
+            #         print(name, ": ", parameters.detach().numpy())
+        encoder_scheduler.step()
+        decoder_scheduler.step()
 
-        print('-----Model saved-----')
-        if epoch % opt.saveInterval == 0:
-            # do saving
-            encoder_model = {'model': encoder.state_dict(), 'optimizer': encoder_optimizer.state_dict(), 'epoch': epoch}
-            torch.save(
-                encoder_model, '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
-            )
-            decoder_model = {'model': decoder.state_dict(), 'optimizer': decoder_optimizer.state_dict(), 'epoch': epoch}
-            torch.save(
-                decoder_model, '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
-            )
-
-        if opt.cuda:
-            torch.cuda.empty_cache()
+        # print('-----Model saved-----')
+        # if epoch % opt.saveInterval == 0:
+        #     # do saving
+        #     encoder_model = {'model': encoder.state_dict(), 'optimizer': encoder_optimizer.state_dict(), 'epoch': epoch}
+        #     torch.save(
+        #         encoder_model, '{0}/encoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+        #     )
+        #     decoder_model = {'model': decoder.state_dict(), 'optimizer': decoder_optimizer.state_dict(), 'epoch': epoch}
+        #     torch.save(
+        #         decoder_model, '{0}/decoder_epoch_{1}.pth.tar'.format(opt.experiment, epoch)
+        #     )
 
         # # val all
         # acc_val, loss_val_avg = valid(opt, encoder, decoder, batch_size=valid_batch_size,

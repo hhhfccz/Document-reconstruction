@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/8/25
 import numpy as np
 import cv2
-from utils import remove_the_bg
+from utils import img_preprocess
 
 
 def match_sift(img1, img2):
@@ -48,8 +48,8 @@ def get_match_img(img_left, img_right, MIN_MATCH_COUNT=10, norm=0.8):
     h, w = img_left.shape[:2]
 
     # 取出底色，避免干扰
-    img_left_g = remove_the_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
-    img_right_g = remove_the_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
+    img_left_g = img_preprocess.remove_bg(cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY))
+    img_right_g = img_preprocess.remove_bg(cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY))
 
     matches, keypoint1, keypoint2 = match_sift(img_left_g, img_right_g)
 

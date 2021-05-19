@@ -2,7 +2,7 @@
 # author: hhhfccz(胡珈魁) time:2020/11/14
 import cv2
 import numpy as np
-from utils import remove_the_bg
+from utils.img_preprocess import remove_bg
 from sklearn.ensemble import IsolationForest
 
 
@@ -197,7 +197,7 @@ def detect(img_gray, norm=1.2, SCREEN_OR_NOT=0):
     # 自适应直方图均衡
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(5, 5))
     img_gray = clahe.apply(img_gray)
-    img_gray = remove_the_bg(img_gray)
+    img_gray = remove_bg(img_gray)
     img_h, img_w = img_gray.shape
 
     # 创建mser实例

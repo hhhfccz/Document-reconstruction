@@ -1,3 +1,5 @@
+# ——*——coding:utf-8——*——
+# author: hhhfccz(胡珈魁) time:2021/3/18
 import torch
 from torch import nn
 import torchvision
@@ -7,7 +9,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
     """
-    Encoder.
+    Encoder
     """
 
     def __init__(self, encoded_image_size=14):

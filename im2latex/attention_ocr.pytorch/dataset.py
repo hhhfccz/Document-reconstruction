@@ -1,7 +1,14 @@
+# ——*——coding:utf-8——*——
+# author: hhhfccz(胡珈魁) time:2021/3/18
+import os
 import sys
+import random
+# TODO
+# import queue as Queue
+# import threading
+
 import cv2
 import numpy as np
-import random
 
 import torch
 from torch.utils.data import Dataset
@@ -12,11 +19,9 @@ from utils import get_data, get_annotation
 
 
 class Im2latexDataset(Dataset):
-    __slots__ = ["transform", "annotations", "length", "labels", "nclass"]
 
     def __init__(self, split, transform=None):
         self.transform = transform
-
         self.annotations = get_annotation(split)
         self.length = len(self.annotations)
 
@@ -55,38 +60,10 @@ class ResizeNormalize():
         self.toTensor = transforms.ToTensor()
 
     def __call__(self, img):
-        # print(img.shape)
-        img = cv2.resize(img, (self.imgW, self.imgH), interpolation=cv2.INTER_CUBIC)
-        # print(img)
+        img = cv2.resize(img, (self.imgW, self.imgH))
         img = self.toTensor(img)
         img.sub_(0.5).div_(0.5)
         return img
-
-
-class RandomSequentialSampler(sampler.Sampler):
-
-    def __init__(self, data_source, batch_size):
-        self.num_samples = len(data_source)
-        self.batch_size = batch_size
-
-    def __iter__(self):
-        n_batch = len(self) // self.batch_size
-        tail = len(self) % self.batch_size
-        index = torch.LongTensor(len(self)).fill_(0)
-        for i in range(n_batch):
-            random_start = random.randint(0, len(self) - self.batch_size)
-            batch_index = random_start + torch.arange(0, self.batch_size)
-            index[i * self.batch_size:(i + 1) * self.batch_size] = batch_index
-        # deal with tail
-        if tail:
-            random_start = random.randint(0, len(self) - self.batch_size)
-            tail_index = random_start + torch.arange(0, tail)
-            index[(i + 1) * self.batch_size:] = tail_index
-
-        return iter(index)
-
-    def __len__(self):
-        return self.num_samples
 
 
 class AlignCollate(object):
@@ -103,19 +80,20 @@ class AlignCollate(object):
         imgH = self.imgH
         imgW = self.imgW
         if self.keep_ratio:
-            ratios = []
+            ratios = np.zeors((len(images), 1))
+            i = 0
             for image in images:
                 h, w = image.shape
-                ratios.append(w / float(h))
-            ratios.sort()
+                ratios[i] = w / float(h)
+                i += 1
+            ratios.sorted()
             max_ratio = ratios[-1]
-            imgW = int(np.floor(max_ratio * imgH))
-            imgW = max(imgH * self.min_ratio, imgW)
+            imgW = max(imgH * self.min_ratio, int(np.floor(max_ratio * imgH)))
             # assure imgH >= imgW
 
         transform = ResizeNormalize(imgH, imgW)
         imgs = [transform(image) for image in images]
-        imgs = torch.cat([t.unsqueeze(0) for t in imgs], 0)
+        imgs = torch.cat([t.unsqueeze_(0) for t in imgs], 0)
 
         return imgs, labels
 

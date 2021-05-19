@@ -1,20 +1,18 @@
+# ——*——coding:utf-8——*——
+# author: hhhfccz(胡珈魁) time:2021/3/18
 import os
+import random
 import sys
 import json
 from collections import namedtuple, Counter
 
-import numpy as np
-
-import numba
-
-numba.config.NUMBA_DEFAULT_NUM_THREADS = 4
 from numba import njit, prange
 
+import numpy as np
 import torch
+import torch.nn as nn
 
 torch.set_printoptions(profile="full")
-import torch.nn as nn
-from torch.autograd import Variable
 
 
 def full2half(uchar):
@@ -30,7 +28,6 @@ def full2half(uchar):
 def get_annotation(split):
     # MODIFIED: use your own dir
     dataset_path = "/home/hhhfccz/im2latex/dataset/im2latex-100k/"
-    data_dir = dataset_path + split
     annotation_path = dataset_path + "annotations_" + split + ".json"
 
     with open(annotation_path, "r", encoding="ISO-8859-1") as annotation_file:
@@ -39,16 +36,16 @@ def get_annotation(split):
     return annotations
 
 
-def get_chars(split, annotations, formula_chars=[]):
+def get_chars(split, annotations):
+    formula_chars = []
     [[formula_chars.append(f_char) for f_char in formula["formula_str"][0]] for formula in annotations]
-
     ans = list(set(formula_chars))
     return ans
 
 
-def get_strs(split, annotations, formulas_strs=[]):
-    [formulas_strs.append(formula["formula_str"][0]) for formula in annotations]
-
+def get_strs(split, annotations):
+    formulas_strs = []
+    [formulas_strs.append(formula["formula_str"]) for formula in annotations]
     return formulas_strs
 
 
@@ -57,8 +54,8 @@ def get_map(formulas_chars):
     chars2num = {}
     for i in range(max_value):
         chars2num[formulas_chars[i]] = str(i + 3)
-    chars2num["¡"] = str(max_value + 3)
-    # ¡ is a speacial char in test data
+    # chars2num["¡"] = str(max_value + 3)
+    # ¡ is a special char in test data
     # 0 is START, 1 is END, 2 is PADDING, so we should begin at 3
     return chars2num
 
@@ -67,7 +64,7 @@ def get_map(formulas_chars):
 def get_targets_tensors(strs_length, max_length, formulas_strs, num2chars, target, START=0, END=1, PAD=2):
     length_num_chars = len(num2chars)
     for i in prange(strs_length):
-        formula_target = np.ones(max_length) * 2
+        formula_target = np.ones(max_length+2) * 2
         formula_target[0] = START
         p = 1
 
@@ -75,18 +72,13 @@ def get_targets_tensors(strs_length, max_length, formulas_strs, num2chars, targe
         length_formula_str = len(formula_str)
 
         for k in prange(length_formula_str):
-            if k % 2 == 0:
-                for l in prange(length_num_chars):
-                    if num2chars[l] == formula_str[k]:
-                        formula_target[p] = l + 3
-                        p += 1
-                        break
+            for l in prange(length_num_chars):
+                if num2chars[l] == formula_str[k]:
+                    formula_target[p] = l + 3
+                    p += 1
 
         formula_target[p] = END
         target[i, :] = formula_target
-        # print(formula_target)
-        # sys.exit()
-        # if you want to test de/encode, please open "sys.exit()"
     return target
 
 
@@ -112,6 +104,7 @@ def get_namedtuple(chars2num):
 
 
 def target_str_encode(split, formulas_strs, chars2num):
+    # print(formulas_strs)
     print("Begin to get targets_tensors")
     if split == "train":
         num2chars_namedtuple = get_namedtuple(chars2num)
@@ -123,17 +116,18 @@ def target_str_encode(split, formulas_strs, chars2num):
         values_list = list(num2chars.values())
         Decode_chars = namedtuple("Decode_chars", keys_list)
         num2chars_namedtuple = Decode_chars._make(values_list)
+    print(chars2num)
+    print(num2chars_namedtuple)
     # the name of chars is the English of ASCII code of nums
 
     l = []
     [l.append(len(formula_str)) for formula_str in formulas_strs]
     max_length = max(l)
     strs_length = len(formulas_strs)
-    # print(max_length)
 
-    targets = np.zeros((strs_length, max_length))
-    # print(targets.shape)
+    targets = np.zeros((strs_length, max_length+2))
     targets_tensors = get_targets_tensors(strs_length, max_length, formulas_strs, num2chars_namedtuple, targets)
+    # print(targets_tensors)
 
     print("Done!")
 
@@ -141,7 +135,6 @@ def target_str_encode(split, formulas_strs, chars2num):
 
 
 def formula_str_decode(targets_tensors, chars2num):
-    # TODO
     num2chars = {value: key for key, value in chars2num.items()}
 
     formulas_strs = []
@@ -153,7 +146,7 @@ def formula_str_decode(targets_tensors, chars2num):
             if target_tensor[k] != 0 and target_tensor[k] != 1 and target_tensor[k] != 2:
                 target_strs.append(num2chars[str(int(target_tensor[k]))])
             formula_str = "".join(target_strs)
-        formulas_strs.append(formula_str)
+            formulas_strs.append(formula_str)
 
     return formulas_strs
 
@@ -173,6 +166,7 @@ def get_data(split, annotations):
             chars2num_json = json.load(json_file)
             chars2num = json.loads(chars2num_json)
     targets_tensors = target_str_encode(split, get_strs(split, annotations), chars2num)
+    # print(targets_tensors)
 
     # targets_tensors = torch.tensor(targets_tensors_numpy, dtype=torch.long)
     print("Data of " + split + ", Done!")
@@ -192,7 +186,7 @@ def weights_init(model):
         if isinstance(m, nn.Conv2d):
             nn.init.kaiming_normal_(m.weight)
         elif isinstance(m, nn.BatchNorm2d):
-            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.weight, random.random())
             nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Linear):
             nn.init.constant_(m.bias, 0)
@@ -203,7 +197,7 @@ def enlarge_decoder_output(x, max_enlargement=5):
     enlarge the loss, use the derivative in tanh
     """
     x /= 1e3
-    return (max_enlargement - 1) * (1 - pow((1 - np.exp(-2 * x)) / (1 + np.exp(-2 * x)), 2)) + 1
+    return (pow(2, max_enlargement) - 1) * (1 - pow((1 - np.exp(-2 * x)) / (1 + np.exp(-2 * x)), 2)) + 1
 
 
 def get_decoder_input(texts, i):
@@ -226,7 +220,7 @@ def get_acc(length, decoded_labels, text):
         for i in prange(len(decoded_labels[k])):
             pred = int(decoded_labels[k][i])
             target = int(text[:, k][i])
-            if target == 0 or target == 2:
+            if target == 0:
                 continue
             elif target != 1:
                 num_total += 1
@@ -240,5 +234,5 @@ def get_acc(length, decoded_labels, text):
 
 
 if __name__ == "__main__":
-    get_data("train")
-    # you can test utils.py here
+    pass
+    # you can test img_preprocess.py here
